@@ -65,10 +65,10 @@ Wire v7 is an ultra-low-latency, zero-kernel-syscall financial exchange dataplan
 
 ```text
   Physical / SmartNIC Line (10G/25G/100G Ethernet)
-                         |
-                         v
+                      |
+                      v
 +-------------------------------------------------------------------+
-|                     eBPF XDP Risk Filter (Kernel)                 |
+|                        eBPF XDP Risk Filter (Kernel)              |
 |  - Parse ITCH/FIX Fields In-Kernel                                |
 |  - Price Collar, Max Order Size, Symbol Allowlist Checks          |
 |  - Drop Non-Compliant Flows (XDP_DROP)                            |
@@ -83,53 +83,64 @@ Wire v7 is an ultra-low-latency, zero-kernel-syscall financial exchange dataplan
                          |
                          v
 +-------------------------------------------------------------------+
-|                 AVX-512 / AVX2 Market Data Parser                 |
+|               AVX-512 / AVX2 Market Data Parser                   |
 |  - ITCH 5.0 Message Decode (Add, Execute, Cancel, Replace, Trade) |
 |  - FIX 4.4 Tag-Value Parser (NewOrderSingle, ExecutionReport)     |
 +------------------------+------------------------------------------+
                          |
                          v
 +-------------------------------------------------------------------+
-|               LMAX Disruptor Event Ring (wire-disruptor)          |
+|             LMAX Disruptor Event Ring (wire-disruptor)            |
 |  - Lock-Free SPSC Power-of-Two Ring                               |
-|  - Cacheline Padded Cursors (`#[repr(align(64))]`)                 |
+|  - Cacheline Padded Cursors (`#[repr(align(64))]`)                |
 |  - Sub-10ns Lock-Free Sequence Barriers                           |
 +------------------------+------------------------------------------+
                          |
                          v
 +-------------------------------------------------------------------+
-|               Limit Order Book (wire-exchange)                    |
+|                Limit Order Book (wire-exchange)                   |
 |  - Flat Price-Indexed Array (O(1) BBO Lookups)                    |
 |  - Real-Time Top-of-Book Spread Calculation                       |
 +------------------------+------------------------------------------+
                          |
                          v
 +-------------------------------------------------------------------+
-|             io_uring SQPOLL Persistence (wire-store)              |
+|               io_uring SQPOLL Persistence (wire-store)            |
 |  - Kernel Thread Submissions (IORING_SETUP_SQPOLL)                |
-|  - Direct I/O Sector Alignment (O_DIRECT | O_DSYNC)              |
+|  - Direct I/O Sector Alignment (O_DIRECT | O_DSYNC)               |
 +-------------------------------------------------------------------+
 Subsystem Deep Dive (Wire v7 Architecture)
 Phase 1: 1GB/2MB HugePages and LMAX Disruptor Runtime (wire-disruptor)
 HugePage Allocation Engine (hugepage.rs): Dynamically attempts 1GB hugepages (MAP_HUGE_1GB), gracefully degrading to 2MB hugepages (MAP_HUGE_2MB) or 4KB system pages with mlock to eliminate Translation Lookaside Buffer (TLB) misses on market data streams.
+
 Cacheline Padded Cursors (Sequence): Sequence counters use explicit 64-byte alignment (#[repr(align(64))]) to isolate reader and writer cursors to separate CPU cache lines, eliminating false sharing.
+
 Lock-Free SPSC Ring: Power-of-two mask indexing yields an atomic publish/claim latency of 7.77 nanoseconds per event at 128.74 Mops/s throughput.
+
 Phase 2: Vectorized ITCH 5.0, FIX 4.4 Parsers, and LOB (wire-exchange)
 Nasdaq ITCH 5.0 SIMD Parsing (itch.rs): AVX-512 (_mm512_loadu_si512) and AVX2 (_mm256_loadu_si512) vector registers load raw market data frames to decode Add Order (A), Order Executed (E), Order Cancel (X), Order Delete (D), Order Replace (U), and Trade (P) messages in 17.40 CPU cycles per message.
+
 FIX 4.4 Tag Parser (fix.rs): Zero-allocation tag-value extractor parsing ASCII tags into numerical field values without heap allocation.
+
 Array-Backed Limit Order Book (lob.rs): Direct price-slot indexing replaces tree maps with contiguous memory lookup arrays, updating top-of-book (BBO) states in 28.19 CPU cycles per event.
+
 Phase 3: Intel DDIO and NAPI Busy-Polling (wire-dma)
 Direct Data I/O (DDIO) Prefetching (ddio.rs): Issues hardware prefetch instructions (_MM_HINT_T2 L3 DDIO hints and _MM_HINT_T0 L1 hints) to write DMA packets into L3 CPU cache lines rather than main memory.
+
 NAPI Socket Configuration (napi.rs): Integrates Linux socket options SO_BUSY_POLL, SO_PREFER_BUSY_POLL, and SO_BUSY_POLL_BUDGET on AF_XDP file descriptors to eliminate network interrupt overhead.
+
 Phase 4: eBPF XDP Pre-Trade Risk Filter (wire-risk)
 In-Kernel Filter (xdp_risk_filter.c): eBPF XDP driver program evaluating symbol allowlists, maximum order sizes, price collars, and aggregate order notional directly in the network driver layer before userspace UMEM transfer.
+
 XDP_DROP Reject Path: Non-compliant orders are dropped in kernel space (XDP_DROP) with execution statistics tracked via BPF array maps (risk_stats_map), processing valid flows at 243.74 Mops/s (12.31 cycles per check).
+
 Phase 5: IEEE 1588 PTP Hardware Timestamping (wire-ptp)
 Silicon Clock Extraction (hw_timestamp.rs): Configures SO_TIMESTAMPING with SOF_TIMESTAMPING_RX_HARDWARE and SOF_TIMESTAMPING_RAW_HARDWARE flags to extract hardware timestamps generated by network interface card MAC PHY clocks.
-Percentile Latency Summaries (latency.rs): Collects sample distributions to compute exact p50, p90, p99, p99.9, and p99.99 latency percentiles without rounding or statistical approximation.
-Workspace Package Structure
-text
 
+Percentile Latency Summaries (latency.rs): Collects sample distributions to compute exact p50, p90, p99, p99.9, and p99.99 latency percentiles without rounding or statistical approximation.
+
+Workspace Package Structure
+Plaintext
 .
 ├── Cargo.toml                              # Workspace manifest
 ├── scripts
@@ -184,7 +195,6 @@ text
 Quickstart and System Tuning
 System Prerequisites (Arch Linux / RHEL / Ubuntu)
 Bash
-
 # Allocate 2MB HugePages (or 1GB via boot params vm.nr_hugepages_mem)
 sudo sysctl -w vm.nr_hugepages=1024
 
@@ -194,20 +204,15 @@ for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 done
 Build Workspace
 Bash
-
 cargo build --all --release
 Run Full Test Suite
 Bash
-
 cargo test --all
 Execute Wire v7 Benchmark Dashboard
 Bash
-
 taskset -c 0 target/release/v7_benchmark
 Run Deterministic Simulation (300 Seeds)
 Bash
-
 cargo run --release -p wire-sim
 License
 Licensed under the MIT License.
- 
