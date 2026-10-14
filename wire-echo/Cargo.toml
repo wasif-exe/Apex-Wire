@@ -18,6 +18,14 @@ wire-exchange = { path = "../wire-exchange" }
 wire-dma = { path = "../wire-dma" }
 wire-risk = { path = "../wire-risk" }
 wire-ptp = { path = "../wire-ptp" }
+wire-mcast = { path = "../wire-mcast" }
+wire-vfio = { path = "../wire-vfio" }
+wire-onload = { path = "../wire-onload" }
+wire-sor = { path = "../wire-sor" }
+wire-ptp-servo = { path = "../wire-ptp-servo" }
+wire-matching = { path = "../wire-matching" }
+wire-alloc = { path = "../wire-alloc" }
+wire-mpmc = { path = "../wire-mpmc" }
 anyhow = "1.0"
 libc = "0.2"
 io-uring = "0.6"

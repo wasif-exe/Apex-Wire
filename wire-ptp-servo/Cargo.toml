@@ -1,0 +1,10 @@
+[package]
+name = "wire-ptp-servo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = { workspace = true }
+anyhow = { workspace = true }
+wire-core = { path = "../wire-core" }
+wire-ptp = { path = "../wire-ptp" }

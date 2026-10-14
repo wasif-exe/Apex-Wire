@@ -16,7 +16,15 @@ members = [
     "wire-exchange",
     "wire-dma",
     "wire-risk",
-    "wire-ptp"
+    "wire-ptp",
+    "wire-mcast",
+    "wire-vfio",
+    "wire-onload",
+    "wire-sor",
+    "wire-ptp-servo",
+    "wire-matching",
+    "wire-alloc",
+    "wire-mpmc"
 ]
 
 [workspace.dependencies]
@@ -31,3 +39,9 @@ anyhow = "1.0"
 io-uring = "0.6"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 ring = "0.17"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
