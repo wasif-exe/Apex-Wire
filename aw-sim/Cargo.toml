@@ -1,0 +1,8 @@
+[package]
+name = "aw-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+rand = { version = "0.8", features = ["small_rng"] }

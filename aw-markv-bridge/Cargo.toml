@@ -1,0 +1,9 @@
+[package]
+name = "aw-markv-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+aw-exchange = { path = "../aw-exchange" }
+aw-matching = { path = "../aw-matching" }

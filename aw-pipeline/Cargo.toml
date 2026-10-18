@@ -1,0 +1,13 @@
+[package]
+name = "aw-pipeline"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+aw-exchange = { path = "../aw-exchange" }
+aw-matching = { path = "../aw-matching" }
+aw-disruptor = { path = "../aw-disruptor" }
+aw-sor = { path = "../aw-sor" }
+aw-vfio = { path = "../aw-vfio" }
+anyhow = "1.0"

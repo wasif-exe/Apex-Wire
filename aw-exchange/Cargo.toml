@@ -1,0 +1,14 @@
+[package]
+name = "aw-exchange"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+aw-disruptor = { path = "../aw-disruptor" }
+libc = { workspace = true }
+anyhow = { workspace = true }
+
+[features]
+default = []
+force_scalar = []

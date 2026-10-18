@@ -1,0 +1,10 @@
+[package]
+name = "aw-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+libc = "0.2"
+anyhow = "1.0"
+io-uring = "0.6"

@@ -1,0 +1,14 @@
+[package]
+name = "aw-tap"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tap-probe"
+path = "src/bin/probe.rs"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+libc.workspace = true
+anyhow.workspace = true
+io-uring = "0.6"

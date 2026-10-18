@@ -1,0 +1,9 @@
+[package]
+name = "aw-gen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-pipeline = { path = "../aw-pipeline" }
+aw-exchange = { path = "../aw-exchange" }
+aw-core = { path = "../aw-core" }

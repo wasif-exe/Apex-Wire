@@ -1,0 +1,12 @@
+[package]
+name = "aw-quic"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+bytes = { workspace = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+ring = { workspace = true }

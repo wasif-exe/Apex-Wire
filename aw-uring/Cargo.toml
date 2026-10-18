@@ -1,0 +1,10 @@
+[package]
+name = "aw-uring"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+io-uring.workspace = true
+libc.workspace = true
+anyhow.workspace = true
+aw-core = { path = "../aw-core" }

@@ -1,0 +1,7 @@
+[package]
+name = "aw-pacer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }

@@ -1,6 +1,4 @@
-/target/
-**/*.rs.bk
+/target
+/profile.json
+/rename_to_aw.sh
 *.o
-*.so
-*.out
-.DS_Store

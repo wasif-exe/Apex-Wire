@@ -1,0 +1,12 @@
+[package]
+name = "aw-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+aw-xdp = { path = "../aw-xdp" }
+aw-store = { path = "../aw-store" }
+io-uring = { workspace = true }
+libc = { workspace = true }
+anyhow = { workspace = true }

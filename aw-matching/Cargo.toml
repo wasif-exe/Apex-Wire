@@ -1,0 +1,7 @@
+[package]
+name = "aw-matching"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-exchange = { path = "../aw-exchange" }

@@ -1,0 +1,14 @@
+[package]
+name = "aw-onload"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aw_onload"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+libc = { workspace = true }
+anyhow = { workspace = true }
+aw-core = { path = "../aw-core" }
+aw-xdp = { path = "../aw-xdp" }

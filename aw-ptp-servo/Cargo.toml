@@ -1,0 +1,10 @@
+[package]
+name = "aw-ptp-servo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = { workspace = true }
+anyhow = { workspace = true }
+aw-core = { path = "../aw-core" }
+aw-ptp = { path = "../aw-ptp" }

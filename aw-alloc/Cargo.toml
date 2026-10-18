@@ -1,0 +1,7 @@
+[package]
+name = "aw-alloc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-disruptor = { path = "../aw-disruptor" }

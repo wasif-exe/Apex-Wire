@@ -1,0 +1,18 @@
+[package]
+name = "aw-simd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aw-core = { path = "../aw-core" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "parse"
+harness = false
+
+[features]
+default = []
+force_scalar = []
