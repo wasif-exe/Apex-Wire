@@ -1,3 +1,9 @@
+<div align="center">
+
+# Apex-Wire V1: Unified Full-Duplex Exchange Appliance
+
+</div>
+
 Apex-Wire V1 unifies the complete v1–v10 evolution into a single 29-crate, 23-subsystem tick-to-trade exchange appliance. Written from scratch in Rust and C, it spans kernel-bypass networking (AF_XDP, VFIO PCIe DMA), market data parsing (Nasdaq ITCH 5.0, CME MDP 3.0 SBE, FIX 4.4), a zero-allocation price-time priority matching engine, AVX2 vectorized order management, hardware PTP clock synchronization, a full-duplex E2E pipeline, hardware PMC telemetry, multi-flow stress generation, and a decision engine bridge. All benchmarks measure isolated operations and end-to-end pipeline stages with zero heap allocations, zero syscalls, and zero locks on the measured hot path.
 
 > **Scope disclosure:** Apex-Wire V1 is a from-scratch implementation of a full exchange dataplane in Rust, benchmarked as synthetic microbenchmarks and a synthetic pipeline on a single pinned core. It is **not** a production exchange. The VFIO driver operates in mock mode (no physical NIC attached), the Mark V decision bridge is a stub (EVM mempool domain mismatch with order book matching), the E2E pipeline uses mock network egress, and PTP hardware clock is synthetically emulated. The benchmarks measure isolated hot-path operations and a synthetic end-to-end path, not live order-to-trade latency on a real network.
