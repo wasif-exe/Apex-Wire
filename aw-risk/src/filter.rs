@@ -153,3 +153,4 @@ mod tests {
         assert_eq!(filter.check_order(&over_notional_order), RiskVerdict::RejectMaxNotional);
     }
 }
+

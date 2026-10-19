@@ -25,11 +25,35 @@ impl Default for PackedOrderSlots {
 pub const FLAG_ACTIVE: u32 = 1 << 0;
 pub const FLAG_CANCELLED: u32 = 1 << 1;
 
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+pub unsafe fn batch_cancel_by_user_avx2(slots: &mut PackedOrderSlots, target_user_id: u32) -> u8 {
+    let target = _mm256_set1_epi32(target_user_id as i32);
+    let users = _mm256_load_si256(slots.user_ids.as_ptr() as *const __m256i);
+    let matched = _mm256_cmpeq_epi32(users, target);
+    let flags = _mm256_load_si256(slots.flags.as_ptr() as *const __m256i);
+    let active = _mm256_slli_epi32::<31>(flags);
+    _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_and_si256(matched, active))) as u8
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+pub unsafe fn batch_cancel_by_price_below_avx2(slots: &mut PackedOrderSlots, min_price: u32) -> u8 {
+    let min = _mm256_set1_epi32(min_price as i32);
+    let prices = _mm256_load_si256(slots.prices.as_ptr() as *const __m256i);
+    let matched = _mm256_cmpgt_epi32(min, prices);
+    let flags = _mm256_load_si256(slots.flags.as_ptr() as *const __m256i);
+    let active = _mm256_slli_epi32::<31>(flags);
+    _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_and_si256(matched, active))) as u8
+}
+
 #[inline(always)]
 pub fn batch_cancel_by_user_x8(slots: &mut PackedOrderSlots, target_user_id: u32) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
-        // SAFETY: Direct AVX2 execution on 32-byte aligned structures.
+        // SAFETY: AVX2 guaranteed by target-cpu=native compilation.
         return unsafe { batch_cancel_by_user_avx2(slots, target_user_id) };
     }
     #[allow(unreachable_code)]
@@ -40,45 +64,11 @@ pub fn batch_cancel_by_user_x8(slots: &mut PackedOrderSlots, target_user_id: u32
 pub fn batch_cancel_by_price_below_x8(slots: &mut PackedOrderSlots, min_price: u32) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
-        // SAFETY: Direct AVX2 execution on 32-byte aligned structures.
+        // SAFETY: AVX2 guaranteed by target-cpu=native compilation.
         return unsafe { batch_cancel_by_price_below_avx2(slots, min_price) };
     }
     #[allow(unreachable_code)]
     batch_cancel_by_price_below_scalar(slots, min_price)
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-pub unsafe fn batch_cancel_by_user_avx2(slots: &mut PackedOrderSlots, target_user_id: u32) -> u8 {
-    let target_vec = _mm256_set1_epi32(target_user_id as i32);
-    let users_vec = _mm256_load_si256(slots.user_ids.as_ptr() as *const __m256i);
-    let cmp = _mm256_cmpeq_epi32(users_vec, target_vec);
-
-    let active_mask_vec = _mm256_set1_epi32(FLAG_ACTIVE as i32);
-    let flags_vec = _mm256_load_si256(slots.flags.as_ptr() as *const __m256i);
-    let is_active = _mm256_and_si256(flags_vec, active_mask_vec);
-    let active_cmp = _mm256_cmpeq_epi32(is_active, active_mask_vec);
-
-    let match_vec = _mm256_and_si256(cmp, active_cmp);
-    _mm256_movemask_ps(_mm256_castsi256_ps(match_vec)) as u8
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-pub unsafe fn batch_cancel_by_price_below_avx2(slots: &mut PackedOrderSlots, min_price: u32) -> u8 {
-    let min_vec = _mm256_set1_epi32(min_price as i32);
-    let prices_vec = _mm256_load_si256(slots.prices.as_ptr() as *const __m256i);
-    let lt_cmp = _mm256_cmpgt_epi32(min_vec, prices_vec);
-
-    let active_mask_vec = _mm256_set1_epi32(FLAG_ACTIVE as i32);
-    let flags_vec = _mm256_load_si256(slots.flags.as_ptr() as *const __m256i);
-    let is_active = _mm256_and_si256(flags_vec, active_mask_vec);
-    let active_cmp = _mm256_cmpeq_epi32(is_active, active_mask_vec);
-
-    let match_vec = _mm256_and_si256(lt_cmp, active_cmp);
-    _mm256_movemask_ps(_mm256_castsi256_ps(match_vec)) as u8
 }
 
 #[inline(always)]
@@ -137,3 +127,4 @@ mod tests {
         assert_eq!(std::mem::size_of::<PackedOrderSlots>(), 128);
     }
 }
+

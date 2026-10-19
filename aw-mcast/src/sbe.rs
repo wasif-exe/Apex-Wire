@@ -95,3 +95,4 @@ mod tests {
         assert_eq!(event.side, Side::Buy);
     }
 }
+

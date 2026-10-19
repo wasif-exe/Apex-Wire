@@ -151,3 +151,4 @@ mod tests {
         assert_eq!(fix.get_tag(54), Some(&b"1"[..]));
     }
 }
+

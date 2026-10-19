@@ -21,3 +21,4 @@ pub fn create_waker(task_id: usize) -> Waker {
     // SAFETY: Constructing Waker from a statically defined valid RawWakerVTable.
     unsafe { Waker::from_raw(raw_waker) }
 }
+

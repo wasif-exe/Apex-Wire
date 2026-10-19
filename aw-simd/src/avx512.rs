@@ -179,3 +179,4 @@ pub unsafe fn parse_one_avx512(frame: &[u8]) -> ParsedL4 {
         }
     }
 }
+

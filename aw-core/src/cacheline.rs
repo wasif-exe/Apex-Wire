@@ -78,3 +78,4 @@ mod tests {
         assert_eq!(std::mem::size_of::<Aligned64<u64>>(), 64);
     }
 }
+

@@ -181,3 +181,4 @@ mod tests {
         assert!(report.accepted_events > 0);
     }
 }
+

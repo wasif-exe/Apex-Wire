@@ -27,29 +27,20 @@ pub struct PipelineResult {
 impl Default for PipelineResult {
     #[inline(always)]
     fn default() -> Self {
-        Self {
-            fill_count: 0,
-            routed: false,
-            venue: 0,
-            egress_ok: false,
-            risk_pass: false,
-            decision_cycles: 0,
-            latency_cycles: 0,
-            _pad: [0u8; 40],
-        }
+        // SAFETY: PipelineResult is repr(C) with all-zero-valid primitive fields.
+        unsafe { std::mem::zeroed() }
     }
 }
 
 pub struct Pipeline {
     publisher: Publisher<'static, MarketEvent>,
     consumer: Consumer<'static, MarketEvent>,
-    disruptor: Disruptor<MarketEvent>,
     matching: MatchingEngine,
     lob: LimitOrderBook,
     sor: SmartOrderRouter,
     vfio: VfioDevice,
     tx_ring: VfioTxRing,
-    egress_buf: [u8; 64],
+    disruptor: Disruptor<MarketEvent>,
 }
 
 unsafe impl Send for Pipeline {}
@@ -57,9 +48,8 @@ unsafe impl Send for Pipeline {}
 impl Pipeline {
     pub fn new(symbol: [u8; 8]) -> anyhow::Result<Self> {
         let disruptor = Disruptor::<MarketEvent>::new(RING_CAPACITY)?;
-        // SAFETY: Publisher and Consumer reference heap-allocated Sequences inside the
-        // Disruptor which is owned by this struct. Drop order is publisher, consumer,
-        // then disruptor (field declaration order), so references remain valid.
+        // SAFETY: Publisher and Consumer reference Sequences inside the Disruptor
+
         let publisher = unsafe {
             std::mem::transmute::<Publisher<'_, MarketEvent>, Publisher<'static, MarketEvent>>(
                 disruptor.publisher(),
@@ -76,21 +66,13 @@ impl Pipeline {
         Ok(Self {
             publisher,
             consumer,
-            disruptor,
             matching: MatchingEngine::new(symbol),
             lob: LimitOrderBook::new(symbol),
             sor: SmartOrderRouter::new(symbol),
             vfio,
             tx_ring,
-            egress_buf: [0u8; 64],
+            disruptor,
         })
-    }
-
-    #[inline(always)]
-    fn reap_tx_completions(&mut self) {
-        if self.vfio.is_mock {
-            self.tx_ring.head = self.tx_ring.tail;
-        }
     }
 
     #[inline(always)]
@@ -99,7 +81,7 @@ impl Pipeline {
         let mut result = PipelineResult::default();
 
         let t_risk = probes::stage_begin(StageId::PipelineRisk);
-        result.risk_pass = event.price > 0 && event.shares > 0 && event.shares <= 1_000_000;
+        result.risk_pass = (event.price | event.shares) != 0 && event.shares <= 1_000_000;
         probes::stage_end(StageId::PipelineRisk, t_risk);
 
         if !result.risk_pass {
@@ -107,18 +89,16 @@ impl Pipeline {
             return result;
         }
 
-        if let Some(seq) = self.publisher.try_claim() {
-            let slot = self.publisher.get_mut(seq);
-            *slot = *event;
-            self.publisher.publish(seq);
-        }
+        self.publisher.try_publish_with(|slot| *slot = *event);
 
-        let mut consumed = *event;
-        if self.consumer.has_next() {
+        let consumed = if self.consumer.has_next() {
             let seq = self.consumer.next_seq();
-            consumed = self.consumer.read(seq);
+            let val = self.consumer.read(seq);
             self.consumer.advance(seq);
-        }
+            val
+        } else {
+            *event
+        };
 
         self.lob.apply_event(&consumed);
 
@@ -139,12 +119,15 @@ impl Pipeline {
         probes::stage_end(StageId::PipelineRoute, t_route);
 
         let t_egress = probes::stage_begin(StageId::PipelineEgress);
-        self.egress_buf[0..4].copy_from_slice(&child.price.to_le_bytes());
-        self.egress_buf[4..8].copy_from_slice(&child.shares.to_le_bytes());
-        self.egress_buf[8] = child.target_venue;
-        self.egress_buf[9] = child.side as u8;
-        result.egress_ok = self.tx_ring.transmit(&self.vfio, &self.egress_buf[..16]);
-        self.reap_tx_completions();
+        let mut pkt = [0u8; 16];
+        let hdr = (child.price as u64) | ((child.shares as u64) << 32);
+        pkt[0..8].copy_from_slice(&hdr.to_le_bytes());
+        pkt[8] = child.target_venue;
+        pkt[9] = child.side as u8;
+        result.egress_ok = self.tx_ring.transmit(&self.vfio, &pkt);
+        if self.vfio.is_mock {
+            self.tx_ring.head = self.tx_ring.tail;
+        }
         probes::stage_end(StageId::PipelineEgress, t_egress);
 
         result.latency_cycles = rdtsc().wrapping_sub(t0);
@@ -197,3 +180,4 @@ mod tests {
         assert_eq!(std::mem::size_of::<PipelineResult>(), 64);
     }
 }
+

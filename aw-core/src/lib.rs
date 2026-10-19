@@ -1375,3 +1375,4 @@ impl Drop for ProbeGuard {
         probes::stage_end(self.id, self.start);
     }
 }
+

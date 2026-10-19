@@ -54,3 +54,4 @@ pub fn configure_napi_busy_poll(fd: RawFd, config: &NapiBusyPollConfig) -> anyho
     }
     Ok(true)
 }
+

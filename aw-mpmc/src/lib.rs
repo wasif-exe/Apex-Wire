@@ -15,7 +15,7 @@ pub struct MpmcQueue<T> {
     _pad_head: [u8; 56],
     tail: AtomicU64,
     _pad_tail: [u8; 56],
-    buffer: Box<[Node<T>]>,
+    buf: *mut Node<T>,
     mask: u64,
     capacity: u64,
 }
@@ -30,7 +30,7 @@ impl<T> MpmcQueue<T> {
         let cap = capacity as u64;
         let mask = cap - 1;
 
-        let mut nodes = Vec::with_capacity(capacity);
+        let mut nodes: Vec<Node<T>> = Vec::with_capacity(capacity);
         for i in 0..cap {
             nodes.push(Node {
                 sequence: AtomicU64::new(i),
@@ -38,12 +38,16 @@ impl<T> MpmcQueue<T> {
             });
         }
 
+        let boxed = nodes.into_boxed_slice();
+        let buf = boxed.as_ptr() as *mut Node<T>;
+        std::mem::forget(boxed);
+
         Self {
             head: AtomicU64::new(0),
             _pad_head: [0; 56],
             tail: AtomicU64::new(0),
             _pad_tail: [0; 56],
-            buffer: nodes.into_boxed_slice(),
+            buf,
             mask,
             capacity: cap,
         }
@@ -55,7 +59,7 @@ impl<T> MpmcQueue<T> {
         loop {
             let node_idx = (tail & self.mask) as usize;
             // SAFETY: node_idx is bounded by mask within buffer length.
-            let node = unsafe { self.buffer.get_unchecked(node_idx) };
+            let node = unsafe { &*self.buf.add(node_idx) };
             let seq = node.sequence.load(Ordering::Acquire);
             let diff = seq as i64 - tail as i64;
 
@@ -105,7 +109,7 @@ impl<T> MpmcQueue<T> {
         loop {
             let node_idx = (head & self.mask) as usize;
             // SAFETY: node_idx is bounded by mask within buffer length.
-            let node = unsafe { self.buffer.get_unchecked(node_idx) };
+            let node = unsafe { &*self.buf.add(node_idx) };
             let seq = node.sequence.load(Ordering::Acquire);
             let diff = seq as i64 - head.wrapping_add(1) as i64;
 
@@ -163,6 +167,10 @@ impl<T> MpmcQueue<T> {
 impl<T> Drop for MpmcQueue<T> {
     fn drop(&mut self) {
         while self.try_pop().is_some() {}
+        // SAFETY: buf was created from a Box<[Node<T>]> of length capacity in new().
+        unsafe {
+            let _ = Box::from_raw(std::slice::from_raw_parts_mut(self.buf, self.capacity as usize));
+        }
     }
 }
 
@@ -248,3 +256,4 @@ mod tests {
         assert_eq!(std::mem::align_of::<Node<u64>>(), 64);
     }
 }
+

@@ -29,6 +29,7 @@ members = [
     "aw-pmc",
     "aw-gen",
     "aw-markv-bridge",
+    "aw-bench",
 ]
 
 [workspace.dependencies]

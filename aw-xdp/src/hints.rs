@@ -35,3 +35,4 @@ pub unsafe fn read_nic_hints_from_headroom(packet_ptr: *const u8, headroom: usiz
     let meta_ptr = packet_ptr.sub(std::mem::size_of::<NicRxMetadata>()) as *const NicRxMetadata;
     std::ptr::read_unaligned(meta_ptr)
 }
+

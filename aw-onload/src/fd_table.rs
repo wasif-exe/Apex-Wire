@@ -88,3 +88,4 @@ mod tests {
         assert!(!table.is_intercepted(42));
     }
 }
+

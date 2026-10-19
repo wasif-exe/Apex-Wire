@@ -49,3 +49,4 @@ fn crc32c_software(data: &[u8]) -> u32 {
     }
     !crc
 }
+

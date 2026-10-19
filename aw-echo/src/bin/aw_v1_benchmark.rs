@@ -728,3 +728,4 @@ fn main() {
     }
     println!("\x1b[1;36m{}\x1b[0m\n", sep);
 }
+

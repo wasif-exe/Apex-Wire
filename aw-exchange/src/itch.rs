@@ -2,6 +2,7 @@ use crate::order::{EventKind, MarketEvent, Side};
 use aw_core::probes::{self, StageId};
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchAddOrder {
@@ -15,6 +16,7 @@ pub struct ItchAddOrder {
     pub stock: [u8; 8],
     pub price: u32,
 }
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchOrderExecuted {
@@ -26,6 +28,7 @@ pub struct ItchOrderExecuted {
     pub executed_shares: u32,
     pub match_number: u64,
 }
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchOrderCancel {
@@ -36,6 +39,7 @@ pub struct ItchOrderCancel {
     pub order_reference_number: u64,
     pub canceled_shares: u32,
 }
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchOrderDelete {
@@ -45,6 +49,7 @@ pub struct ItchOrderDelete {
     pub timestamp: [u8; 6],
     pub order_reference_number: u64,
 }
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchOrderReplace {
@@ -57,6 +62,7 @@ pub struct ItchOrderReplace {
     pub shares: u32,
     pub price: u32,
 }
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ItchTrade {
@@ -71,132 +77,124 @@ pub struct ItchTrade {
     pub price: u32,
     pub match_number: u64,
 }
+
 #[inline(always)]
 pub fn parse_timestamp_48(ts: &[u8; 6]) -> u64 {
     let mut buf = [0u8; 8];
     buf[2..8].copy_from_slice(ts);
     u64::from_be_bytes(buf)
 }
-#[inline(always)]
-pub fn parse_itch_message_scalar(buf: &[u8], event: &mut MarketEvent) -> bool {
+
+#[cold]
+#[inline(never)]
+fn parse_non_add(buf: &[u8], event: &mut MarketEvent) -> bool {
     if buf.is_empty() {
         return false;
     }
-    let msg_type = buf[0];
-    match msg_type {
-        b'A' => {
-            if buf.len() < 36 {
-                return false;
-            }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let order_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            let side = if buf[19] == b'B' { Side::Buy } else { Side::Sell };
-            let shares = u32::from_be_bytes([buf[20], buf[21], buf[22], buf[23]]);
-            let mut symbol = [0u8; 8];
-            symbol.copy_from_slice(&buf[24..32]);
-            let price = u32::from_be_bytes([buf[32], buf[33], buf[34], buf[35]]);
-            event.kind = EventKind::AddOrder;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = order_id;
-            event.side = side;
-            event.shares = shares;
-            event.symbol = symbol;
-            event.price = price;
-            true
-        }
+    let ptr = buf.as_ptr();
+    match buf[0] {
         b'E' => {
             if buf.len() < 31 {
                 return false;
             }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let order_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            let shares = u32::from_be_bytes([buf[19], buf[20], buf[21], buf[22]]);
-            let match_num = u64::from_be_bytes([buf[23], buf[24], buf[25], buf[26], buf[27], buf[28], buf[29], buf[30]]);
-            event.kind = EventKind::OrderExecuted;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = order_id;
-            event.shares = shares;
-            event.match_number = match_num;
+            // SAFETY: buf.len() >= 31, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::OrderExecuted;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.shares = u32::from_be((ptr.add(19) as *const u32).read_unaligned());
+                event.match_number = u64::from_be((ptr.add(23) as *const u64).read_unaligned());
+            }
             true
         }
         b'X' => {
             if buf.len() < 23 {
                 return false;
             }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let order_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            let shares = u32::from_be_bytes([buf[19], buf[20], buf[21], buf[22]]);
-            event.kind = EventKind::OrderCancel;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = order_id;
-            event.shares = shares;
+            // SAFETY: buf.len() >= 23, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::OrderCancel;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.shares = u32::from_be((ptr.add(19) as *const u32).read_unaligned());
+            }
             true
         }
         b'D' => {
             if buf.len() < 19 {
                 return false;
             }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let order_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            event.kind = EventKind::OrderDelete;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = order_id;
+            // SAFETY: buf.len() >= 19, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::OrderDelete;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+            }
             true
         }
         b'U' => {
             if buf.len() < 35 {
                 return false;
             }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let orig_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            let new_id = u64::from_be_bytes([buf[19], buf[20], buf[21], buf[22], buf[23], buf[24], buf[25], buf[26]]);
-            let shares = u32::from_be_bytes([buf[27], buf[28], buf[29], buf[30]]);
-            let price = u32::from_be_bytes([buf[31], buf[32], buf[33], buf[34]]);
-            event.kind = EventKind::OrderReplace;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = orig_id;
-            event.new_order_id = new_id;
-            event.shares = shares;
-            event.price = price;
+            // SAFETY: buf.len() >= 35, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::OrderReplace;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.new_order_id = u64::from_be((ptr.add(19) as *const u64).read_unaligned());
+                event.shares = u32::from_be((ptr.add(27) as *const u32).read_unaligned());
+                event.price = u32::from_be((ptr.add(31) as *const u32).read_unaligned());
+            }
             true
         }
         b'P' => {
             if buf.len() < 44 {
                 return false;
             }
-            let stock_locate = u16::from_be_bytes([buf[1], buf[2]]);
-            let ts = parse_timestamp_48(&[buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]]);
-            let order_id = u64::from_be_bytes([buf[11], buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18]]);
-            let side = if buf[19] == b'B' { Side::Buy } else { Side::Sell };
-            let shares = u32::from_be_bytes([buf[20], buf[21], buf[22], buf[23]]);
-            let mut symbol = [0u8; 8];
-            symbol.copy_from_slice(&buf[24..32]);
-            let price = u32::from_be_bytes([buf[32], buf[33], buf[34], buf[35]]);
-            let match_num = u64::from_be_bytes([buf[36], buf[37], buf[38], buf[39], buf[40], buf[41], buf[42], buf[43]]);
-            event.kind = EventKind::Trade;
-            event.stock_locate = stock_locate;
-            event.timestamp_ns = ts;
-            event.order_id = order_id;
-            event.side = side;
-            event.shares = shares;
-            event.symbol = symbol;
-            event.price = price;
-            event.match_number = match_num;
+            // SAFETY: buf.len() >= 44, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::Trade;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.side = if *ptr.add(19) == b'B' { Side::Buy } else { Side::Sell };
+                event.shares = u32::from_be((ptr.add(20) as *const u32).read_unaligned());
+                event.symbol = (ptr.add(24) as *const [u8; 8]).read_unaligned();
+                event.price = u32::from_be((ptr.add(32) as *const u32).read_unaligned());
+                event.match_number = u64::from_be((ptr.add(36) as *const u64).read_unaligned());
+            }
             true
         }
         _ => false,
     }
 }
+
+#[inline(always)]
+pub fn parse_itch_message_scalar(buf: &[u8], event: &mut MarketEvent) -> bool {
+    if buf.len() >= 36 {
+        let ptr = buf.as_ptr();
+        // SAFETY: buf.len() >= 36, all pointer reads within bounds.
+        if unsafe { *ptr } == b'A' {
+            unsafe {
+                event.kind = EventKind::AddOrder;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.side = if *ptr.add(19) == b'B' { Side::Buy } else { Side::Sell };
+                event.shares = u32::from_be((ptr.add(20) as *const u32).read_unaligned());
+                event.symbol = (ptr.add(24) as *const [u8; 8]).read_unaligned();
+                event.price = u32::from_be((ptr.add(32) as *const u32).read_unaligned());
+            }
+            return true;
+        }
+    }
+    parse_non_add(buf, event)
+}
+
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn parse_itch_add_order_avx2(buf: &[u8], event: &mut MarketEvent) -> bool {
@@ -225,6 +223,7 @@ pub unsafe fn parse_itch_add_order_avx2(buf: &[u8], event: &mut MarketEvent) -> 
     event.price = price;
     true
 }
+
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512dq", enable = "avx512vl")]
 pub unsafe fn parse_itch_add_order_avx512(buf: &[u8], event: &mut MarketEvent) -> bool {
@@ -253,35 +252,19 @@ pub unsafe fn parse_itch_add_order_avx512(buf: &[u8], event: &mut MarketEvent) -
     event.price = price;
     true
 }
+
 #[inline(always)]
 pub fn parse_itch_message(buf: &[u8], event: &mut MarketEvent) -> bool {
     let t_begin = probes::stage_begin(StageId::ItchParse);
-    #[cfg(target_arch = "x86_64")]
-    {
-        if buf.len() >= 64 && is_x86_feature_detected!("avx512f") && !cfg!(feature = "force_scalar") {
-            if buf[0] == b'A' {
-                // SAFETY: Safe because is_x86_feature_detected!("avx512f") and buffer length is >= 64.
-                let ok = unsafe { parse_itch_add_order_avx512(buf, event) };
-                probes::stage_end(StageId::ItchParse, t_begin);
-                return ok;
-            }
-        }
-        if buf.len() >= 36 && is_x86_feature_detected!("avx2") && !cfg!(feature = "force_scalar") {
-            if buf[0] == b'A' {
-                // SAFETY: Safe because is_x86_feature_detected!("avx2") and buffer length is >= 36.
-                let ok = unsafe { parse_itch_add_order_avx2(buf, event) };
-                probes::stage_end(StageId::ItchParse, t_begin);
-                return ok;
-            }
-        }
-    }
     let ok = parse_itch_message_scalar(buf, event);
     probes::stage_end(StageId::ItchParse, t_begin);
     ok
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn parse_itch_add_order() {
         let mut raw = vec![0u8; 64];
@@ -305,3 +288,4 @@ mod tests {
         assert_eq!(event.price, 1850000);
     }
 }
+

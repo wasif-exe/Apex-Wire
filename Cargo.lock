@@ -43,6 +43,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aw-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aw-core",
+ "aw-exchange",
+ "aw-matching",
+ "aw-pmc",
+ "aw-simd",
+ "aw-sor",
+ "aw-xdp",
+ "libc",
+]
+
+[[package]]
 name = "aw-core"
 version = "0.1.0"
 dependencies = [

@@ -11,44 +11,47 @@ const SLAB_128_CAPACITY: usize = 512 * 1024;
 const SLAB_256_CAPACITY: usize = 256 * 1024;
 
 pub struct FixedSlab<const BLOCK_SIZE: usize> {
-    buffer: HugeAllocation<u8>,
-    bump_offset: usize,
+    ptr: *mut u8,
     free_head: u32,
-    capacity_blocks: usize,
+    bump_offset: u32,
+    byte_capacity: usize,
+    _buffer: HugeAllocation<u8>,
 }
 
 const NULL_INDEX: u32 = u32::MAX;
 
 impl<const BLOCK_SIZE: usize> FixedSlab<BLOCK_SIZE> {
+    const BLOCK_MASK: usize = BLOCK_SIZE - 1;
+
     pub fn new(capacity_blocks: usize) -> Self {
         let byte_size = capacity_blocks * BLOCK_SIZE;
         let buffer = HugeAllocation::<u8>::alloc(byte_size)
             .expect("failed to allocate hugepage slab memory");
+        let ptr = buffer.ptr;
         Self {
-            buffer,
-            bump_offset: 0,
+            ptr,
             free_head: NULL_INDEX,
-            capacity_blocks,
+            bump_offset: 0,
+            byte_capacity: byte_size,
+            _buffer: buffer,
         }
     }
 
     #[inline(always)]
     pub fn alloc(&mut self) -> *mut u8 {
-        if self.free_head != NULL_INDEX {
-            let idx = self.free_head as usize;
-            let offset = idx * BLOCK_SIZE;
-            // SAFETY: idx was validated on free and offset is within buffer allocation.
-            let ptr = unsafe { self.buffer.ptr.add(offset) };
-            // SAFETY: ptr points to valid allocated slab block storing next free index.
-            self.free_head = unsafe { *(ptr as *const u32) };
-            return ptr;
+        let head = self.free_head;
+        if head != NULL_INDEX {
+            // SAFETY: head is a valid byte offset within the allocated buffer.
+            let p = unsafe { self.ptr.add(head as usize) };
+            // SAFETY: p points to a free block whose first 4 bytes store the next free offset.
+            self.free_head = unsafe { *(p as *const u32) };
+            return p;
         }
-
-        if self.bump_offset < self.capacity_blocks {
-            let offset = self.bump_offset * BLOCK_SIZE;
-            self.bump_offset += 1;
-            // SAFETY: offset is strictly less than allocated capacity * BLOCK_SIZE.
-            unsafe { self.buffer.ptr.add(offset) }
+        let bump = self.bump_offset;
+        if (bump as usize) < self.byte_capacity {
+            self.bump_offset = bump + BLOCK_SIZE as u32;
+            // SAFETY: bump is strictly less than byte_capacity.
+            unsafe { self.ptr.add(bump as usize) }
         } else {
             std::ptr::null_mut()
         }
@@ -59,33 +62,25 @@ impl<const BLOCK_SIZE: usize> FixedSlab<BLOCK_SIZE> {
         if ptr.is_null() {
             return;
         }
-        let base = self.buffer.ptr as usize;
-        let p = ptr as usize;
-        if p < base {
-            return;
-        }
-        let diff = p - base;
-        let idx = diff / BLOCK_SIZE;
-        if idx >= self.capacity_blocks || (diff % BLOCK_SIZE) != 0 {
+        let diff = (ptr as usize).wrapping_sub(self.ptr as usize);
+        if diff >= self.byte_capacity || (diff & Self::BLOCK_MASK) != 0 {
             return;
         }
         // SAFETY: ptr is verified to lie inside slab bounds and be block-aligned.
         unsafe {
             *(ptr as *mut u32) = self.free_head;
         }
-        self.free_head = idx as u32;
+        self.free_head = diff as u32;
     }
 
     #[inline(always)]
     pub fn owns(&self, ptr: *const u8) -> bool {
-        let base = self.buffer.ptr as usize;
-        let p = ptr as usize;
-        let end = base + self.capacity_blocks * BLOCK_SIZE;
-        p >= base && p < end
+        let diff = (ptr as usize).wrapping_sub(self.ptr as usize);
+        diff < self.byte_capacity
     }
 
     pub fn page_kind(&self) -> HugePageKind {
-        self.buffer.kind
+        self._buffer.kind
     }
 }
 
@@ -378,3 +373,4 @@ mod tests {
         assert!(!slab.owns(outside));
     }
 }
+

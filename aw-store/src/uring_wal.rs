@@ -201,3 +201,4 @@ impl Drop for AsyncWalWriter {
         }
     }
 }
+

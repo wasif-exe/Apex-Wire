@@ -50,3 +50,4 @@ pub struct LatencySummary {
     pub max: u64,
     pub mean: f64,
 }
+

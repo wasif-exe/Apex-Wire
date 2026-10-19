@@ -65,3 +65,4 @@ pub fn parse_batch_x8(frames: &[&[u8]; 8], out: &mut [ParsedL4; 8]) {
     batch::parse_batch_x8(frames, out);
     probes::stage_end(StageId::SimdParseBatch, t_begin);
 }
+

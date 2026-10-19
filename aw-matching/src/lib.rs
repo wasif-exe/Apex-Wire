@@ -139,100 +139,68 @@ impl MatchingEngine {
         side: Side,
         timestamp_ns: u64,
     ) -> MatchResult {
-        let mut result = MatchResult {
-            fill: DEFAULT_EVENT,
-            fill_count: 0,
-            resting_order_id: NULL_IDX,
-            resting_generation: 0,
-            _pad: 0,
-        };
+        // SAFETY: MatchResult is all-integer types; zeroed memory is valid.
+        let mut result = MatchResult::default();
+        result.resting_order_id = NULL_IDX;
 
         let mut remaining = shares;
         let orders = self.data.orders.as_mut_ptr();
+        let is_buy = side as u8 == Side::Buy as u8;
 
-        if matches!(side, Side::Buy) {
-            if self.best_ask <= price && self.best_ask != u32::MAX {
-                let p_idx = (self.best_ask as usize) & (PRICE_SLOTS - 1);
-                // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
-                let level = unsafe { &mut *self.data.ask_levels.as_mut_ptr().add(p_idx) };
-                if level.active && level.head != NULL_IDX {
-                    let head_idx = level.head as usize;
-                    // SAFETY: head_idx is within orders allocation.
-                    let order = unsafe { &mut *orders.add(head_idx) };
-                    let fill_qty = if remaining < order.shares { remaining } else { order.shares };
-
-                    self.match_number += 1;
-                    result.fill.timestamp_ns = timestamp_ns;
-                    result.fill.order_id = head_idx as u64;
-                    result.fill.price = self.best_ask;
-                    result.fill.shares = fill_qty;
-                    result.fill.match_number = self.match_number;
-                    result.fill.symbol = self.symbol;
-                    result.fill.kind = EventKind::Trade;
-                    result.fill.side = Side::Sell;
-                    result.fill_count = 1;
-
-                    remaining -= fill_qty;
-                    order.shares -= fill_qty;
-                    level.total_shares -= fill_qty as u64;
-
-                    if order.shares == 0 {
-                        let old_head = level.head;
-                        level.head = order.next;
-                        if level.head == NULL_IDX {
-                            level.tail = NULL_IDX;
-                        }
-                        level.order_count -= 1;
-                        order.active = false;
-                        order.next = self.free_head;
-                        self.free_head = old_head;
-                        order.generation = order.generation.wrapping_add(1);
-                        if level.order_count == 0 {
-                            level.active = false;
-                            self.advance_best_ask();
-                        }
-                    }
-                }
-            }
+        let best_opp = if is_buy { self.best_ask } else { self.best_bid };
+        let can_match = if is_buy {
+            best_opp <= price && best_opp != u32::MAX
         } else {
-            if self.best_bid >= price && self.best_bid != 0 {
-                let p_idx = (self.best_bid as usize) & (PRICE_SLOTS - 1);
-                // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
-                let level = unsafe { &mut *self.data.bid_levels.as_mut_ptr().add(p_idx) };
-                if level.active && level.head != NULL_IDX {
-                    let head_idx = level.head as usize;
-                    // SAFETY: head_idx is within orders allocation.
-                    let order = unsafe { &mut *orders.add(head_idx) };
-                    let fill_qty = if remaining < order.shares { remaining } else { order.shares };
+            best_opp >= price && best_opp != 0
+        };
 
-                    self.match_number += 1;
-                    result.fill.timestamp_ns = timestamp_ns;
-                    result.fill.order_id = head_idx as u64;
-                    result.fill.price = self.best_bid;
-                    result.fill.shares = fill_qty;
-                    result.fill.match_number = self.match_number;
-                    result.fill.symbol = self.symbol;
-                    result.fill.kind = EventKind::Trade;
-                    result.fill.side = Side::Buy;
-                    result.fill_count = 1;
+        if can_match {
+            let p_idx = (best_opp as usize) & (PRICE_SLOTS - 1);
+            let levels = if is_buy {
+                self.data.ask_levels.as_mut_ptr()
+            } else {
+                self.data.bid_levels.as_mut_ptr()
+            };
+            // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
+            let level = unsafe { &mut *levels.add(p_idx) };
 
-                    remaining -= fill_qty;
-                    order.shares -= fill_qty;
-                    level.total_shares -= fill_qty as u64;
+            if level.active && level.head != NULL_IDX {
+                let head_idx = level.head as usize;
+                // SAFETY: head_idx is within orders allocation.
+                let order = unsafe { &mut *orders.add(head_idx) };
+                let fill_qty = remaining.min(order.shares);
 
-                    if order.shares == 0 {
-                        let old_head = level.head;
-                        level.head = order.next;
-                        if level.head == NULL_IDX {
-                            level.tail = NULL_IDX;
-                        }
-                        level.order_count -= 1;
-                        order.active = false;
-                        order.next = self.free_head;
-                        self.free_head = old_head;
-                        order.generation = order.generation.wrapping_add(1);
-                        if level.order_count == 0 {
-                            level.active = false;
+                self.match_number += 1;
+                result.fill.timestamp_ns = timestamp_ns;
+                result.fill.order_id = head_idx as u64;
+                result.fill.price = best_opp;
+                result.fill.shares = fill_qty;
+                result.fill.match_number = self.match_number;
+                result.fill.symbol = self.symbol;
+                result.fill.kind = EventKind::Trade;
+                result.fill.side = if is_buy { Side::Sell } else { Side::Buy };
+                result.fill_count = 1;
+
+                remaining -= fill_qty;
+                order.shares -= fill_qty;
+                level.total_shares -= fill_qty as u64;
+
+                if order.shares == 0 {
+                    let old_head = level.head;
+                    level.head = order.next;
+                    if level.head == NULL_IDX {
+                        level.tail = NULL_IDX;
+                    }
+                    level.order_count -= 1;
+                    order.active = false;
+                    order.next = self.free_head;
+                    self.free_head = old_head;
+                    order.generation = order.generation.wrapping_add(1);
+                    if level.order_count == 0 {
+                        level.active = false;
+                        if is_buy {
+                            self.advance_best_ask();
+                        } else {
                             self.advance_best_bid();
                         }
                     }
@@ -251,40 +219,32 @@ impl MatchingEngine {
                 o.active = true;
                 o.next = NULL_IDX;
                 let p_idx = (price as usize) & (PRICE_SLOTS - 1);
-                if matches!(side, Side::Buy) {
-                    // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
-                    let level = unsafe { &mut *self.data.bid_levels.as_mut_ptr().add(p_idx) };
-                    if level.tail != NULL_IDX {
-                        // SAFETY: level.tail is within orders allocation.
-                        unsafe { (*orders.add(level.tail as usize)).next = oid; }
-                    } else {
-                        level.head = oid;
-                    }
-                    level.tail = oid;
-                    level.order_count += 1;
-                    level.total_shares += remaining as u64;
-                    level.active = true;
+                let levels = if is_buy {
+                    self.data.bid_levels.as_mut_ptr()
+                } else {
+                    self.data.ask_levels.as_mut_ptr()
+                };
+                // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
+                let level = unsafe { &mut *levels.add(p_idx) };
+                if level.tail != NULL_IDX {
+                    // SAFETY: level.tail is within orders allocation.
+                    unsafe { (*orders.add(level.tail as usize)).next = oid; }
+                } else {
+                    level.head = oid;
+                }
+                level.tail = oid;
+                level.order_count += 1;
+                level.total_shares += remaining as u64;
+                level.active = true;
+                if is_buy {
                     if price > self.best_bid { self.best_bid = price; }
                     if price < self.min_bid || self.min_bid == 0 { self.min_bid = price; }
                 } else {
-                    // SAFETY: p_idx is masked to PRICE_SLOTS bounds.
-                    let level = unsafe { &mut *self.data.ask_levels.as_mut_ptr().add(p_idx) };
-                    if level.tail != NULL_IDX {
-                        // SAFETY: level.tail is within orders allocation.
-                        unsafe { (*orders.add(level.tail as usize)).next = oid; }
-                    } else {
-                        level.head = oid;
-                    }
-                    level.tail = oid;
-                    level.order_count += 1;
-                    level.total_shares += remaining as u64;
-                    level.active = true;
                     if price < self.best_ask { self.best_ask = price; }
                     if price > self.max_ask { self.max_ask = price; }
                 }
                 result.resting_order_id = oid;
-                // SAFETY: oid is within orders allocation.
-                result.resting_generation = unsafe { (*orders.add(oid as usize)).generation };
+                result.resting_generation = o.generation;
             }
         }
 
@@ -491,3 +451,4 @@ mod tests {
         assert_eq!(std::mem::size_of::<PriceLevel>(), 32);
     }
 }
+

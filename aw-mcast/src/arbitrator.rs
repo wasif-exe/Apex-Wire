@@ -83,3 +83,4 @@ mod tests {
         assert_eq!(arb.gaps_recovered, 1);
     }
 }
+

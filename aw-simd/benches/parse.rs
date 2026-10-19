@@ -40,3 +40,4 @@ fn bench_simd_parser(c: &mut Criterion) {
 }
 criterion_group!(benches, bench_simd_parser);
 criterion_main!(benches);
+

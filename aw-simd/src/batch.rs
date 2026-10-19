@@ -10,3 +10,4 @@ pub fn parse_batch_x8(frames: &[&[u8]; 8], out: &mut [ParsedL4; 8]) {
     out[6] = parse_one(frames[6]);
     out[7] = parse_one(frames[7]);
 }
+

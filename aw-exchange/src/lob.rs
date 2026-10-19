@@ -270,3 +270,4 @@ mod tests {
         assert_eq!(bbo.spread, 10);
     }
 }
+

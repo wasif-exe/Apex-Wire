@@ -83,3 +83,4 @@ pub fn probe_ptp_hardware_support(ifname: &str) -> bool {
     let dev_path = format!("/sys/class/net/{}/device/ptp", ifname);
     std::path::Path::new(&dev_path).exists()
 }
+

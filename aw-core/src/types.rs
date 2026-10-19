@@ -76,3 +76,4 @@ mod tests {
         assert_eq!(b.as_slice()[1], (Seq(300), Seq(400)));
     }
 }
+

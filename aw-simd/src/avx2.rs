@@ -123,3 +123,4 @@ unsafe fn _mm256_extract_epi8_unwrap(val: __m256i, idx: i32) -> u8 {
     _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, val);
     arr[idx as usize]
 }
+

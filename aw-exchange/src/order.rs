@@ -51,3 +51,4 @@ impl Default for MarketEvent {
         }
     }
 }
+

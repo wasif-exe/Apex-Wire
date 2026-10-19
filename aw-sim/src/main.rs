@@ -47,3 +47,4 @@ fn main() {
         println!("[{}] {}/{} passed ({} failed)", name, pass, seeds, fail);
     }
 }
+

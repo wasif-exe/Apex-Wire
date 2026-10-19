@@ -45,7 +45,7 @@ fn main() -> anyhow::Result<()> {
             std::io::Error::last_os_error()
         ));
     }
-    println!("⚡ tap0 opened. Our MAC: {:02x?}, Our IP: {}.{}.{}.{}",
+    println!(" tap0 opened. Our MAC: {:02x?}, Our IP: {}.{}.{}.{}",
         OUR_MAC, OUR_IP[0], OUR_IP[1], OUR_IP[2], OUR_IP[3]);
     println!("Waiting for packets. Run: ping 192.168.99.2\n");
     let mut buf = [0u8; 2048];
@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
         match ethertype {
             0x0806 => handle_arp(&buf[..n], &mut file),
             0x0800 => handle_ipv4(&buf[..n], &mut file),
-            _ => {} 
+            _ => {}
         }
     }
 }
@@ -72,26 +72,26 @@ fn handle_arp(frame: &[u8], file: &mut std::fs::File) {
     }
     let sender_mac = &frame[22..28];
     let sender_ip  = &frame[28..32];
-    println!("📥 ARP request: who has {}.{}.{}.{}? (from {:02x?})",
+    println!(" ARP request: who has {}.{}.{}.{}? (from {:02x?})",
         target_ip[0], target_ip[1], target_ip[2], target_ip[3], sender_mac);
     let mut reply = [0u8; 42];
-    reply[0..6].copy_from_slice(sender_mac);   
-    reply[6..12].copy_from_slice(&OUR_MAC);   
+    reply[0..6].copy_from_slice(sender_mac);
+    reply[6..12].copy_from_slice(&OUR_MAC);
     reply[12..14].copy_from_slice(&0x0806u16.to_be_bytes());
-    reply[14..16].copy_from_slice(&1u16.to_be_bytes());     
+    reply[14..16].copy_from_slice(&1u16.to_be_bytes());
     reply[16..18].copy_from_slice(&0x0800u16.to_be_bytes());
-    reply[18] = 6;  
-    reply[19] = 4;  
-    reply[20..22].copy_from_slice(&2u16.to_be_bytes());      
-    reply[22..28].copy_from_slice(&OUR_MAC);   
-    reply[28..32].copy_from_slice(&OUR_IP);    
-    reply[32..38].copy_from_slice(sender_mac); 
-    reply[38..42].copy_from_slice(sender_ip);  
+    reply[18] = 6;
+    reply[19] = 4;
+    reply[20..22].copy_from_slice(&2u16.to_be_bytes());
+    reply[22..28].copy_from_slice(&OUR_MAC);
+    reply[28..32].copy_from_slice(&OUR_IP);
+    reply[32..38].copy_from_slice(sender_mac);
+    reply[38..42].copy_from_slice(sender_ip);
     file.write_all(&reply).unwrap();
-    println!("📤 ARP reply sent\n");
+    println!(" ARP reply sent\n");
 }
 fn handle_ipv4(frame: &[u8], file: &mut std::fs::File) {
-    if frame.len() < 34 { return; } 
+    if frame.len() < 34 { return; }
     let ihl = (frame[14] & 0x0F) as usize * 4;
     let total_len = u16::from_be_bytes([frame[16], frame[17]]) as usize;
     let protocol = frame[14 + 9];
@@ -100,7 +100,7 @@ fn handle_ipv4(frame: &[u8], file: &mut std::fs::File) {
     if dst_ip != OUR_IP { return; }
     let ip_hdr = &frame[14..14 + ihl];
     if internet_checksum(ip_hdr) != 0 {
-        println!("⚠️  Bad IP checksum, dropping");
+        println!("  Bad IP checksum, dropping");
         return;
     }
     if protocol == 1 {
@@ -113,20 +113,20 @@ fn handle_ipv4(frame: &[u8], file: &mut std::fs::File) {
             let icmp_len = icmp_end - icmp_start;
             let reply_len = 14 + 20 + icmp_len;
             let mut reply = vec![0u8; reply_len];
-            reply[0..6].copy_from_slice(&frame[6..12]);  
-            reply[6..12].copy_from_slice(&OUR_MAC);       
+            reply[0..6].copy_from_slice(&frame[6..12]);
+            reply[6..12].copy_from_slice(&OUR_MAC);
             reply[12..14].copy_from_slice(&0x0800u16.to_be_bytes());
-            reply[14] = 0x45; 
-            reply[15] = 0x00; 
+            reply[14] = 0x45;
+            reply[15] = 0x00;
             let ip_total = (20 + icmp_len) as u16;
             reply[16..18].copy_from_slice(&ip_total.to_be_bytes());
-            reply[18..20].copy_from_slice(&0u16.to_be_bytes()); 
-            reply[20..22].copy_from_slice(&0x4000u16.to_be_bytes()); 
-            reply[22] = 64;  
-            reply[23] = 1;    
-            reply[24..26].copy_from_slice(&0u16.to_be_bytes()); 
-            reply[26..30].copy_from_slice(&OUR_IP); 
-            reply[30..34].copy_from_slice(src_ip);   
+            reply[18..20].copy_from_slice(&0u16.to_be_bytes());
+            reply[20..22].copy_from_slice(&0x4000u16.to_be_bytes());
+            reply[22] = 64;
+            reply[23] = 1;
+            reply[24..26].copy_from_slice(&0u16.to_be_bytes());
+            reply[26..30].copy_from_slice(&OUR_IP);
+            reply[30..34].copy_from_slice(src_ip);
             let ip_cksum = internet_checksum(&reply[14..34]);
             reply[24..26].copy_from_slice(&ip_cksum.to_be_bytes());
             reply[34..].copy_from_slice(&frame[icmp_start..icmp_end]);
@@ -136,7 +136,8 @@ fn handle_ipv4(frame: &[u8], file: &mut std::fs::File) {
             reply[36..38].copy_from_slice(&icmp_cksum.to_be_bytes());
             file.write_all(&reply).unwrap();
             let seq = u16::from_be_bytes([frame[icmp_start + 6], frame[icmp_start + 7]]);
-            println!("📤 ICMP echo reply sent (seq={}, {} bytes)", seq, icmp_len);
+            println!(" ICMP echo reply sent (seq={}, {} bytes)", seq, icmp_len);
         }
     }
 }
+

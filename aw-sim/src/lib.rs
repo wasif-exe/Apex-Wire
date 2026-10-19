@@ -172,3 +172,4 @@ pub fn run_simulation(seed: u64, config: &SimConfig) -> SimResult {
         ticks,
     }
 }
+

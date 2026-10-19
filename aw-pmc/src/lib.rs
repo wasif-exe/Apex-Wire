@@ -244,3 +244,4 @@ mod tests {
         assert_eq!(snap.llc_miss_rate(), 0.0);
     }
 }
+
