@@ -1,17 +1,4 @@
-<div align="center">
-<<<<<<< HEAD
-
-# Apex-Wire V1: Unified Full-Duplex Exchange Appliance
-
-</div>
-
-Apex-Wire V1 unifies the complete v1–v10 evolution into a single 29-crate, 23-subsystem tick-to-trade exchange appliance. Written from scratch in Rust and C, it spans kernel-bypass networking (AF_XDP, VFIO PCIe DMA), market data parsing (Nasdaq ITCH 5.0, CME MDP 3.0 SBE, FIX 4.4), a zero-allocation price-time priority matching engine, AVX2 vectorized order management, hardware PTP clock synchronization, a full-duplex E2E pipeline, hardware PMC telemetry, multi-flow stress generation, and a decision engine bridge. All benchmarks measure isolated operations and end-to-end pipeline stages with zero heap allocations, zero syscalls, and zero locks on the measured hot path.
-=======
->>>>>>> 0c6c538 (Apex-Wire V2)
-
 # Apex-Wire V2: Unified Full-Duplex Exchange Appliance
-
-</div>
 
 Apex-Wire V2 is a full-duplex, ultra-low-latency financial exchange engine written in Rust and C. It integrates market data feed parsing (Nasdaq ITCH 5.0, CME MDP 3.0 SBE, FIX 4.4), an array-backed $O(1)$ price-time priority matching engine, AVX2 vectorized order management, memory-mapped write-ahead logging (WAL), multi-tenant symbol isolation, and a lock-free cross-thread event pipeline.
 
