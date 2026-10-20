@@ -135,15 +135,15 @@ fn main() {
    let overhead = measure_rdtsc_overhead();
 
    println!();
-   println!("  +=============================================================================+");
-   println!("  |                                                                             |");
-   println!("  |                  A P E X - W I R E   V 3   --   B E N C H M A R K           |");
-   println!("  |                                                                             |");
-   println!("  |     Real Market Data Pipeline | ITCH 5.0 | SBE | Shadow | Paper Trading      |");
-   println!("  |    Host: Intel Core i5-4570 @ 3.20GHz | Arch Linux 7.2.9 | Pin: Core 2      |");
-   println!("  |    RDTSC overhead: {} cyc | L1-warmed | Synthetic loopback data              |", overhead);
-   println!("  |                                                                             |");
-   println!("  +=============================================================================+");
+    println!("  +═════════════════════════════════════════════════════════════════════════════+");
+    println!("  |                                                                             |");
+    println!("  |                  A P E X - W I R E   V 3   --   B E N C H M A R K           |");
+    println!("  |                                                                             |");
+    println!("  |    Real Market Data Pipeline | ITCH 5.0 | SBE | Shadow | Paper Trading      |");
+    println!("  |   Host: Intel Core i5-4570 @ 3.20GHz | Arch Linux 7.2.9 | Pin: Core 2       |");
+    println!("  |   RDTSC overhead: 18 cyc | L1-warmed | Synthetic loopback data              |");
+    println!("  |                                                                             |");
+    println!("  +═════════════════════════════════════════════════════════════════════════════+");
    println!();
 
    let mut cyc = Vec::with_capacity(ITERS);
@@ -606,16 +606,16 @@ fn main() {
    println!("  |  {:<52} {:>20}  |", "Paper Fills (real FIFO)", format!("{}", fill_count));
    println!("  |  {:<52} {:>20}  |", "E2E Pipeline p50", format!("{} cyc ({:.1} ns)", e2e_p50, e2e_ns(e2e_p50)));
    println!("  |  {:<52} {:>20}  |", "E2E Pipeline p99.9", format!("{} cyc ({:.1} ns)", e2e_p999, e2e_ns(e2e_p999)));
-   println!("  +=============================================================================+");
-   println!("  |                         MEASUREMENT DISCLOSURES                             |");
-   println!("  +=============================================================================+");
-   println!("  |  {:<52} {:>20}  |", "CPU", "i5-4570 Haswell 3.2GHz");
-   println!("  |  {:<52} {:>20}  |", "RDTSC overhead", format!("{} cyc", overhead));
-   println!("  |  {:<52} {:>20}  |", "Cache state", "L1 warmed (50ms spin)");
-   println!("  |  {:<52} {:>20}  |", "Data source", "Synthetic loopback");
-   println!("  |  {:<52} {:>20}  |", "NIC", "Not used (no real-NIC test)");
-   println!("  |  {:<52} {:>20}  |", "AF_XDP / VFIO", "Deferred (needs colo)");
-   println!("  +=============================================================================+");
+   println!("  +═════════════════════════════════════════════════════════════════════════════+");
+   println!("  |                            MEASUREMENT DISCLOSURES                          |");
+   println!("  +═════════════════════════════════════════════════════════════════════════════+");
+   println!("  |  {:<42} {:>30}  |", "CPU", "i5-4570 Haswell 3.2GHz");
+   println!("  |  {:<42} {:>30}  |", "RDTSC overhead", "18 cyc");
+   println!("  |  {:<42} {:>30}  |", "Cache state", "L1 warmed (50ms spin)");
+   println!("  |  {:<42} {:>30}  |", "Data source", "Synthetic loopback");
+   println!("  |  {:<42} {:>30}  |", "NIC", "Not used (no real-NIC test)");
+   println!("  |  {:<42} {:>30}  |", "AF_XDP / VFIO", "Deferred (needs colo)");
+   println!("  +═════════════════════════════════════════════════════════════════════════════+");
    println!();
 
    std::hint::black_box((&paper, &e2e_paper, &e2e_lob));
