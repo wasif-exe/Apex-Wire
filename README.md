@@ -24,7 +24,7 @@ All benchmarks follow strict physical measurement standards. No numbers are synt
 ## Official Apex-Wire V3 Benchmark Suite (`aw_v3_benchmark`)
 
 <p align="center">
-  <img src="benchmarks/aw_v3_benchmark.png" alt="Apex-Wire V3 Benchmark" width="100%">
+  <img src="benchmarks/aw_v3_benchmark.jpg" alt="Apex-Wire V3 Benchmark" width="100%">
 </p>
 
 ---
