@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 aw-core = { path = "../aw-core" }
+aw-exchange = { path = "../aw-exchange" }
 rand = { version = "0.8", features = ["small_rng"] }

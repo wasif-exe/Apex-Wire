@@ -30,6 +30,7 @@ members = [
     "aw-gen",
     "aw-markv-bridge",
     "aw-bench",
+    "aw-pcap",
 ]
 
 [workspace.dependencies]

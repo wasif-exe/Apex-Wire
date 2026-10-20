@@ -8,3 +8,4 @@ libc = { workspace = true }
 anyhow = { workspace = true }
 aw-core = { path = "../aw-core" }
 aw-exchange = { path = "../aw-exchange" }
+aw-store = { path = "../aw-store" }

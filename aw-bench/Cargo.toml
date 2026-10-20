@@ -11,5 +11,9 @@ aw-sor = { path = "../aw-sor" }
 aw-pmc = { path = "../aw-pmc" }
 aw-xdp = { path = "../aw-xdp" }
 aw-simd = { path = "../aw-simd" }
+aw-pcap = { path = "../aw-pcap" }
+aw-store = { path = "../aw-store" }
+aw-mcast = { path = "../aw-mcast" }
+aw-sim = { path = "../aw-sim" }
 libc = { workspace = true }
 anyhow = { workspace = true }

@@ -50,9 +50,13 @@ dependencies = [
  "aw-core",
  "aw-exchange",
  "aw-matching",
+ "aw-mcast",
+ "aw-pcap",
  "aw-pmc",
+ "aw-sim",
  "aw-simd",
  "aw-sor",
+ "aw-store",
  "aw-xdp",
  "libc",
 ]
@@ -162,6 +166,7 @@ dependencies = [
  "anyhow",
  "aw-core",
  "aw-exchange",
+ "aw-store",
  "libc",
 ]
 
@@ -187,6 +192,14 @@ name = "aw-pacer"
 version = "0.1.0"
 dependencies = [
  "aw-core",
+]
+
+[[package]]
+name = "aw-pcap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
 ]
 
 [[package]]
@@ -267,6 +280,7 @@ name = "aw-sim"
 version = "0.1.0"
 dependencies = [
  "aw-core",
+ "aw-exchange",
  "rand",
 ]
 

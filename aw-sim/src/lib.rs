@@ -1,3 +1,4 @@
+pub mod paper;
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use std::time::{Duration, Instant};

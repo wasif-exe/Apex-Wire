@@ -1,5 +1,6 @@
 use crate::order::{EventKind, MarketEvent, Side};
 use aw_core::probes::{self, StageId};
+
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -19,6 +20,21 @@ pub struct ItchAddOrder {
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
+pub struct ItchAddOrderMpid {
+    pub msg_type: u8,
+    pub stock_locate: u16,
+    pub tracking_number: u16,
+    pub timestamp: [u8; 6],
+    pub order_reference_number: u64,
+    pub buy_sell_indicator: u8,
+    pub shares: u32,
+    pub stock: [u8; 8],
+    pub price: u32,
+    pub attribution: [u8; 4],
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
 pub struct ItchOrderExecuted {
     pub msg_type: u8,
     pub stock_locate: u16,
@@ -27,6 +43,20 @@ pub struct ItchOrderExecuted {
     pub order_reference_number: u64,
     pub executed_shares: u32,
     pub match_number: u64,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct ItchOrderExecutedWithPrice {
+    pub msg_type: u8,
+    pub stock_locate: u16,
+    pub tracking_number: u16,
+    pub timestamp: [u8; 6],
+    pub order_reference_number: u64,
+    pub executed_shares: u32,
+    pub match_number: u64,
+    pub printable: u8,
+    pub execution_price: u32,
 }
 
 #[repr(C, packed)]
@@ -78,6 +108,29 @@ pub struct ItchTrade {
     pub match_number: u64,
 }
 
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct ItchSystemEvent {
+    pub msg_type: u8,
+    pub stock_locate: u16,
+    pub tracking_number: u16,
+    pub timestamp: [u8; 6],
+    pub event_code: u8,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct ItchTradingAction {
+    pub msg_type: u8,
+    pub stock_locate: u16,
+    pub tracking_number: u16,
+    pub timestamp: [u8; 6],
+    pub stock: [u8; 8],
+    pub trading_state: u8,
+    pub reserved: u8,
+    pub reason: [u8; 4],
+}
+
 #[inline(always)]
 pub fn parse_timestamp_48(ts: &[u8; 6]) -> u64 {
     let mut buf = [0u8; 8];
@@ -105,6 +158,22 @@ fn parse_non_add(buf: &[u8], event: &mut MarketEvent) -> bool {
                 event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
                 event.shares = u32::from_be((ptr.add(19) as *const u32).read_unaligned());
                 event.match_number = u64::from_be((ptr.add(23) as *const u64).read_unaligned());
+            }
+            true
+        }
+        b'C' => {
+            if buf.len() < 36 {
+                return false;
+            }
+            // SAFETY: buf.len() >= 36, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::OrderExecutedWithPrice;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.shares = u32::from_be((ptr.add(19) as *const u32).read_unaligned());
+                event.match_number = u64::from_be((ptr.add(23) as *const u64).read_unaligned());
+                event.price = u32::from_be((ptr.add(32) as *const u32).read_unaligned());
             }
             true
         }
@@ -166,6 +235,50 @@ fn parse_non_add(buf: &[u8], event: &mut MarketEvent) -> bool {
                 event.symbol = (ptr.add(24) as *const [u8; 8]).read_unaligned();
                 event.price = u32::from_be((ptr.add(32) as *const u32).read_unaligned());
                 event.match_number = u64::from_be((ptr.add(36) as *const u64).read_unaligned());
+            }
+            true
+        }
+        b'F' => {
+            if buf.len() < 40 {
+                return false;
+            }
+            // SAFETY: buf.len() >= 40, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::AddOrderMpid;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.order_id = u64::from_be((ptr.add(11) as *const u64).read_unaligned());
+                event.side = if *ptr.add(19) == b'B' { Side::Buy } else { Side::Sell };
+                event.shares = u32::from_be((ptr.add(20) as *const u32).read_unaligned());
+                event.symbol = (ptr.add(24) as *const [u8; 8]).read_unaligned();
+                event.price = u32::from_be((ptr.add(32) as *const u32).read_unaligned());
+            }
+            true
+        }
+        b'S' => {
+            if buf.len() < 12 {
+                return false;
+            }
+            // SAFETY: buf.len() >= 12, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::SystemEvent;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.shares = *ptr.add(11) as u32;
+            }
+            true
+        }
+        b'H' => {
+            if buf.len() < 25 {
+                return false;
+            }
+            // SAFETY: buf.len() >= 25, all pointer reads within bounds.
+            unsafe {
+                event.kind = EventKind::TradingAction;
+                event.stock_locate = u16::from_be((ptr.add(1) as *const u16).read_unaligned());
+                event.timestamp_ns = u64::from_be((ptr.add(3) as *const u64).read_unaligned()) & 0x0000_FFFF_FFFF_FFFF;
+                event.symbol = (ptr.add(11) as *const [u8; 8]).read_unaligned();
+                event.shares = *ptr.add(19) as u32;
             }
             true
         }
@@ -287,5 +400,74 @@ mod tests {
         assert_eq!(&event.symbol, b"AAPL    ");
         assert_eq!(event.price, 1850000);
     }
-}
 
+    #[test]
+    fn parse_itch_add_order_mpid() {
+        let mut raw = vec![0u8; 64];
+        raw[0] = b'F';
+        raw[1..3].copy_from_slice(&2u16.to_be_bytes());
+        raw[5..11].copy_from_slice(&[0, 0, 0, 0, 0, 1]);
+        raw[11..19].copy_from_slice(&12345u64.to_be_bytes());
+        raw[19] = b'S';
+        raw[20..24].copy_from_slice(&200u32.to_be_bytes());
+        raw[24..32].copy_from_slice(b"MSFT    ");
+        raw[32..36].copy_from_slice(&1900000u32.to_be_bytes());
+        raw[36..40].copy_from_slice(b"NSDQ");
+        let mut event = MarketEvent::default();
+        let ok = parse_itch_message(&raw, &mut event);
+        assert!(ok);
+        assert_eq!(event.kind, EventKind::AddOrderMpid);
+        assert_eq!(event.order_id, 12345);
+        assert_eq!(event.side, Side::Sell);
+        assert_eq!(event.price, 1900000);
+    }
+
+    #[test]
+    fn parse_itch_executed_with_price() {
+        let mut raw = vec![0u8; 64];
+        raw[0] = b'C';
+        raw[1..3].copy_from_slice(&1u16.to_be_bytes());
+        raw[5..11].copy_from_slice(&[0, 0, 0, 0, 0, 5]);
+        raw[11..19].copy_from_slice(&777u64.to_be_bytes());
+        raw[19..23].copy_from_slice(&50u32.to_be_bytes());
+        raw[23..31].copy_from_slice(&999u64.to_be_bytes());
+        raw[31] = b'Y';
+        raw[32..36].copy_from_slice(&1855000u32.to_be_bytes());
+        let mut event = MarketEvent::default();
+        let ok = parse_itch_message(&raw, &mut event);
+        assert!(ok);
+        assert_eq!(event.kind, EventKind::OrderExecutedWithPrice);
+        assert_eq!(event.order_id, 777);
+        assert_eq!(event.shares, 50);
+        assert_eq!(event.price, 1855000);
+    }
+
+    #[test]
+    fn parse_itch_system_event() {
+        let mut raw = vec![0u8; 16];
+        raw[0] = b'S';
+        raw[1..3].copy_from_slice(&0u16.to_be_bytes());
+        raw[5..11].copy_from_slice(&[0, 0, 0, 0, 0, 10]);
+        raw[11] = b'O';
+        let mut event = MarketEvent::default();
+        let ok = parse_itch_message(&raw, &mut event);
+        assert!(ok);
+        assert_eq!(event.kind, EventKind::SystemEvent);
+        assert_eq!(event.shares, b'O' as u32);
+    }
+
+    #[test]
+    fn parse_itch_trading_action() {
+        let mut raw = vec![0u8; 32];
+        raw[0] = b'H';
+        raw[1..3].copy_from_slice(&1u16.to_be_bytes());
+        raw[5..11].copy_from_slice(&[0, 0, 0, 0, 0, 20]);
+        raw[11..19].copy_from_slice(b"TSLA    ");
+        raw[19] = b'T';
+        let mut event = MarketEvent::default();
+        let ok = parse_itch_message(&raw, &mut event);
+        assert!(ok);
+        assert_eq!(event.kind, EventKind::TradingAction);
+        assert_eq!(&event.symbol, b"TSLA    ");
+    }
+}

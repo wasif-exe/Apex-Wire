@@ -5,6 +5,7 @@ pub enum Side {
     Buy = 1,
     Sell = 2,
 }
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EventKind {
@@ -17,7 +18,12 @@ pub enum EventKind {
     OrderReplace = 5,
     Trade = 6,
     BboUpdate = 7,
+    AddOrderMpid = 8,
+    OrderExecutedWithPrice = 9,
+    SystemEvent = 10,
+    TradingAction = 11,
 }
+
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarketEvent {
@@ -33,6 +39,7 @@ pub struct MarketEvent {
     pub stock_locate: u16,
     pub _pad: [u8; 12],
 }
+
 impl Default for MarketEvent {
     #[inline(always)]
     fn default() -> Self {
@@ -51,4 +58,3 @@ impl Default for MarketEvent {
         }
     }
 }
-
