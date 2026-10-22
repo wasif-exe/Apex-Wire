@@ -1,4 +1,5 @@
 pub mod profile;
+pub mod budget;
 pub mod conntable;
 pub mod types;
 pub mod shard;
@@ -6,6 +7,7 @@ pub mod cacheline;
 pub mod resp;
 pub mod kv;
 pub use profile::probes;
+pub use budget::{LatencyBudget, BudgetReport};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::Ipv4Addr;
 use std::time::{Duration, Instant};
