@@ -413,3 +413,6 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
+const _: () = assert!(core::mem::size_of::<EventLogHeader>() == 64);
+const _: () = assert!(core::mem::size_of::<EventRecord>() == 64);

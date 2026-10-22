@@ -203,3 +203,5 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
+const _: () = assert!(core::mem::size_of::<ShadowDecision>() == 24);

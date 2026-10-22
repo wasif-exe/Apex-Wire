@@ -58,3 +58,5 @@ impl Default for MarketEvent {
         }
     }
 }
+
+const _: () = assert!(core::mem::size_of::<MarketEvent>() == 64);
