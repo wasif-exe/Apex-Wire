@@ -1,3 +1,5 @@
+pub mod strategy;
+pub use strategy::{Strategy, StrategyRegistry, Decision, Action, PassthroughStrategy, MomentumStrategy};
 use aw_core::probes::{self, StageId, rdtsc};
 use aw_disruptor::{Consumer, Disruptor, Publisher};
 use aw_exchange::lob::LimitOrderBook;

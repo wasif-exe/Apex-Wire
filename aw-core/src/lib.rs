@@ -1,5 +1,6 @@
 pub mod profile;
 pub mod budget;
+pub mod harden;
 pub mod conntable;
 pub mod types;
 pub mod shard;
@@ -7,6 +8,7 @@ pub mod cacheline;
 pub mod resp;
 pub mod kv;
 pub use profile::probes;
+pub use harden::{install_signal_handlers, is_shutdown, request_shutdown, pin_thread, ProductionGuard, Watchdog};
 pub use budget::{LatencyBudget, BudgetReport};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::Ipv4Addr;
