@@ -48,6 +48,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aw-core",
+ "aw-disruptor",
  "aw-exchange",
  "aw-matching",
  "aw-mcast",
@@ -165,6 +166,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aw-core",
+ "aw-disruptor",
  "aw-exchange",
  "aw-store",
  "libc",

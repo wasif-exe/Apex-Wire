@@ -126,7 +126,7 @@ impl ShadowLogger {
 }
 
 #[inline(always)]
-fn market_event_to_bytes(event: &MarketEvent) -> [u8; EVENT_PAYLOAD_SIZE] {
+pub(crate) fn market_event_to_bytes(event: &MarketEvent) -> [u8; EVENT_PAYLOAD_SIZE] {
     let mut buf = [0u8; EVENT_PAYLOAD_SIZE];
     buf[0..8].copy_from_slice(&event.timestamp_ns.to_le_bytes());
     buf[8..16].copy_from_slice(&event.order_id.to_le_bytes());
@@ -139,7 +139,7 @@ fn market_event_to_bytes(event: &MarketEvent) -> [u8; EVENT_PAYLOAD_SIZE] {
 }
 
 #[inline(always)]
-fn decision_to_bytes(dec: &ShadowDecision) -> [u8; 20] {
+pub(crate) fn decision_to_bytes(dec: &ShadowDecision) -> [u8; 20] {
     let mut buf = [0u8; 20];
     buf[0] = dec.action;
     buf[1] = dec.side;

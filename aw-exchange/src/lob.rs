@@ -106,14 +106,28 @@ impl LimitOrderBook {
             return (word_idx as u32) * 64 + highest;
         }
         let mut wi = word_idx;
-        loop {
-            if wi == 0 {
-                break;
+        while wi >= 4 {
+            let base = wi - 4;
+            // SAFETY: base + 4 <= BITMAP_WORDS, pointer within Vec allocation.
+            let v = unsafe {
+                core::arch::x86_64::_mm256_loadu_si256(
+                    bitmap.as_ptr().add(base) as *const core::arch::x86_64::__m256i
+                )
+            };
+            if unsafe { core::arch::x86_64::_mm256_testz_si256(v, v) } == 0 {
+                for j in (0..4).rev() {
+                    let idx = base + j;
+                    if bitmap[idx] != 0 {
+                        return (idx as u32) * 64 + (63 - bitmap[idx].leading_zeros());
+                    }
+                }
             }
+            wi = base;
+        }
+        while wi > 0 {
             wi -= 1;
             if bitmap[wi] != 0 {
-                let highest = 63 - bitmap[wi].leading_zeros();
-                return (wi as u32) * 64 + highest;
+                return (wi as u32) * 64 + (63 - bitmap[wi].leading_zeros());
             }
         }
         0
@@ -134,10 +148,25 @@ impl LimitOrderBook {
             return (word_idx as u32) * 64 + lowest;
         }
         let mut wi = word_idx + 1;
+        while wi + 4 <= BITMAP_WORDS {
+            // SAFETY: wi + 4 <= BITMAP_WORDS, pointer within Vec allocation.
+            let v = unsafe {
+                core::arch::x86_64::_mm256_loadu_si256(
+                    bitmap.as_ptr().add(wi) as *const core::arch::x86_64::__m256i
+                )
+            };
+            if unsafe { core::arch::x86_64::_mm256_testz_si256(v, v) } == 0 {
+                for j in 0..4 {
+                    if bitmap[wi + j] != 0 {
+                        return ((wi + j) as u32) * 64 + bitmap[wi + j].trailing_zeros();
+                    }
+                }
+            }
+            wi += 4;
+        }
         while wi < BITMAP_WORDS {
             if bitmap[wi] != 0 {
-                let lowest = bitmap[wi].trailing_zeros();
-                return (wi as u32) * 64 + lowest;
+                return (wi as u32) * 64 + bitmap[wi].trailing_zeros();
             }
             wi += 1;
         }
