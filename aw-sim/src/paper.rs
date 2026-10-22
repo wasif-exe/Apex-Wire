@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use aw_exchange::lob::LimitOrderBook;
 use aw_exchange::order::{EventKind, MarketEvent, Side};
 
@@ -27,6 +28,11 @@ struct PaperOrder {
     active: bool,
 }
 
+#[inline(always)]
+fn price_key(price: u32, side: Side) -> u64 {
+    ((price as u64) << 3) | (side as u8 as u64)
+}
+
 pub struct PaperEngine {
     config: PaperConfig,
     lob: LimitOrderBook,
@@ -34,6 +40,8 @@ pub struct PaperEngine {
     fills: Vec<PaperFill>,
     next_order_id: u64,
     current_time_ns: u64,
+    price_index: HashMap<u64, Vec<usize>>,
+    order_id_index: HashMap<u64, usize>,
 }
 
 impl PaperEngine {
@@ -45,6 +53,8 @@ impl PaperEngine {
             next_order_id: 1,
             current_time_ns: 0,
             config,
+            price_index: HashMap::new(),
+            order_id_index: HashMap::new(),
         }
     }
 
@@ -58,6 +68,7 @@ impl PaperEngine {
         let oid = self.next_order_id;
         self.next_order_id += 1;
         let ahead = self.lob.shares_at_price(price, side);
+        let idx = self.orders.len();
         self.orders.push(PaperOrder {
             order_id: oid,
             price,
@@ -68,13 +79,18 @@ impl PaperEngine {
             ahead_volume: ahead,
             active: true,
         });
+        self.price_index
+            .entry(price_key(price, side))
+            .or_insert_with(Vec::new)
+            .push(idx);
+        self.order_id_index.insert(oid, idx);
         oid
     }
 
     pub fn cancel_order(&mut self, order_id: u64) -> bool {
-        for order in &mut self.orders {
-            if order.order_id == order_id && order.active {
-                order.active = false;
+        if let Some(&idx) = self.order_id_index.get(&order_id) {
+            if self.orders[idx].active {
+                self.orders[idx].active = false;
                 return true;
             }
         }
@@ -115,43 +131,44 @@ impl PaperEngine {
             }
         };
 
-        for order in &mut self.orders {
-            if !order.active || order.remaining == 0 {
-                continue;
-            }
-            if event.timestamp_ns < order.live_time_ns {
-                continue;
-            }
-            if order.price != affected_price || order.side != affected_side {
-                continue;
-            }
+        let key = price_key(affected_price, affected_side);
+        if let Some(indices) = self.price_index.get(&key) {
+            for &idx in indices {
+                let order = &mut self.orders[idx];
+                if !order.active || order.remaining == 0 {
+                    continue;
+                }
+                if event.timestamp_ns < order.live_time_ns {
+                    continue;
+                }
 
-            let mut available = effective_shares;
-            if order.ahead_volume > 0 {
-                let dec = available.min(order.ahead_volume);
-                order.ahead_volume -= dec;
-                available -= dec;
-            }
+                let mut available = effective_shares;
+                if order.ahead_volume > 0 {
+                    let dec = available.min(order.ahead_volume);
+                    order.ahead_volume -= dec;
+                    available -= dec;
+                }
 
-            if order.ahead_volume == 0 && available > 0 && order.remaining > 0 {
-                match event.kind {
-                    EventKind::OrderExecuted | EventKind::OrderExecutedWithPrice => {
-                        let fill_qty = (available as u32).min(order.remaining);
-                        if fill_qty > 0 {
-                            order.remaining -= fill_qty;
-                            self.fills.push(PaperFill {
-                                timestamp_ns: event.timestamp_ns,
-                                order_id: order.order_id,
-                                price: order.price,
-                                shares: fill_qty,
-                                side: order.side,
-                            });
-                            if order.remaining == 0 {
-                                order.active = false;
+                if order.ahead_volume == 0 && available > 0 && order.remaining > 0 {
+                    match event.kind {
+                        EventKind::OrderExecuted | EventKind::OrderExecutedWithPrice => {
+                            let fill_qty = (available as u32).min(order.remaining);
+                            if fill_qty > 0 {
+                                order.remaining -= fill_qty;
+                                self.fills.push(PaperFill {
+                                    timestamp_ns: event.timestamp_ns,
+                                    order_id: order.order_id,
+                                    price: order.price,
+                                    shares: fill_qty,
+                                    side: order.side,
+                                });
+                                if order.remaining == 0 {
+                                    order.active = false;
+                                }
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -176,19 +193,15 @@ impl PaperEngine {
     }
 
     pub fn order_remaining(&self, order_id: u64) -> u32 {
-        for order in &self.orders {
-            if order.order_id == order_id {
-                return order.remaining;
-            }
+        if let Some(&idx) = self.order_id_index.get(&order_id) {
+            return self.orders[idx].remaining;
         }
         0
     }
 
     pub fn order_ahead_volume(&self, order_id: u64) -> u64 {
-        for order in &self.orders {
-            if order.order_id == order_id {
-                return order.ahead_volume;
-            }
+        if let Some(&idx) = self.order_id_index.get(&order_id) {
+            return self.orders[idx].ahead_volume;
         }
         0
     }

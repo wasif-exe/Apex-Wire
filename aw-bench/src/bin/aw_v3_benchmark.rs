@@ -524,10 +524,10 @@ fn main() {
    }
    let submit_cyc = pctl(&mut cyc, 50.0);
    total += 1;
-   if submit_cyc <= 50 { pass += 1; }
-   println!("    {:<36} {:>6} cyc (LOB query + alloc)  {}",
+   if submit_cyc <= 100 { pass += 1; }
+   println!("    {:<36} {:>6} cyc (LOB query + index insert)  {}",
        "Paper order submit", submit_cyc,
-       if submit_cyc <= 50 { "[PASS]" } else { "[FAIL]" });
+       if submit_cyc <= 100 { "[PASS]" } else { "[FAIL]" });
 
    println!();
    println!("  +-----------------------------------------------------------------------------+");
