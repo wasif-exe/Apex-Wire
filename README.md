@@ -1,4 +1,8 @@
+<div align="center">
+
 # Apex-Wire V4
+
+</div>
 
 Low-latency market data ingestion and order entry engine. V4 adds live network multicast ingress, binary (OUCH 5.0) and FIX 4.4 order entry, latency budget instrumentation, strategy hot-reload, and production hardening on top of the V3 pipeline. Validated against a full day of real NASDAQ ITCH 5.0 data: 282,229,684 messages, 8.3 GB, 100% recognition.
 
@@ -9,8 +13,11 @@ For V2 and V3 feature history, see `docs/V2.md` and `docs/V3.md` (referenced; pr
 ## Headline Result
 
 **29.3 M messages/sec** (28.1 M order events/sec) parsing real NASDAQ ITCH 5.0 through a full limit order book, single core, 2013 Haswell i5.
-
+<div align="center">
+  
 ![V4 Benchmark](benchmarks/aw_v4_benchmark.png)
+
+</div>
 
 ---
 
