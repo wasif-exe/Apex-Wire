@@ -31,6 +31,7 @@ members = [
     "aw-markv-bridge",
     "aw-bench",
     "aw-pcap",
+    "aw-net",
 ]
 
 [workspace.dependencies]

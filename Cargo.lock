@@ -180,6 +180,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aw-net"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aw-core",
+ "aw-disruptor",
+ "aw-exchange",
+ "aw-pcap",
+ "libc",
+]
+
+[[package]]
 name = "aw-onload"
 version = "0.1.0"
 dependencies = [

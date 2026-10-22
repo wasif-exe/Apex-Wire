@@ -1,0 +1,12 @@
+[package]
+name = "aw-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = { workspace = true }
+anyhow = { workspace = true }
+aw-core = { path = "../aw-core" }
+aw-exchange = { path = "../aw-exchange" }
+aw-pcap = { path = "../aw-pcap" }
+aw-disruptor = { path = "../aw-disruptor" }
