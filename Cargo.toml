@@ -32,6 +32,7 @@ members = [
     "aw-bench",
     "aw-pcap",
     "aw-net",
+    "aw-fix-gateway",
 ]
 
 [workspace.dependencies]

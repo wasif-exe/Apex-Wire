@@ -136,6 +136,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aw-fix-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aw-core",
+ "aw-disruptor",
+ "aw-exchange",
+ "libc",
+]
+
+[[package]]
 name = "aw-gen"
 version = "0.1.0"
 dependencies = [
