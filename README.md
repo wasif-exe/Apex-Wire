@@ -1,126 +1,136 @@
-
-
 <div align="center">
 
-# Apex-Wire V5
+# Apex-Wire V6
 
-**Production-Grade ITCH Replay with Per-Symbol Order Books, Matching Engine, and Live Feed Ingestion**
+**Production-Grade ITCH Replay Engine — 132.53 M msg/s Single-Core, 530.91 M msg/s Multi-Core**
 
 </div>
 
-V5 replaces V4's single-LOB replay with a correct per-symbol sharded architecture, integrates a synthetic matching engine, adds MoldUDP64/SoupBinTCP framing for real NASDAQ multicast and TCP feeds, and ships with per-message-type latency histograms. Validated against 1 GB of real NASDAQ ITCH 5.0 data: 34,057,154 messages, 8,850 unique symbols, 100% recognition.
+V6 fixes a critical build configuration defect in V5 that prevented the compiler from using the host CPU's instruction set, then pushes the hot path to the hardware limit with cache-line-aligned direct AVX-512 ring writes and zero-copy ITCH parsing. All V5 features are preserved: per-symbol LOB sharding, synthetic matching engine, MoldUDP64/SoupBinTCP live feed ingestion, LRU eviction.
 
-For V2, V3, and V4 feature history, see `docs/V2.md`, `docs/V3.md`, and the V4 README preserved in git history.
+For V2 through V5 feature history, see `docs/V2.md`, `docs/V3.md`, and the V4/V5 READMEs preserved in git history.
 
 ---
 
 ## Headline Result
 
-**3.06 M messages/sec** (2.94 M order events/sec) parsing real NASDAQ ITCH 5.0 through **per-symbol limit order books** with LRU eviction, 2-thread disruptor pipeline, 2013 Haswell i5. Apply latency p50: **33.8 ns**.
+**132.53 M messages/sec** single-core, **530.91 M messages/sec** across 4 cores — synthetic ITCH AddOrder events through a per-symbol limit order book with matching engine, SPSC disruptor pipeline, and AVX-512 direct ring stores. Match latency: **22.2 ns** (sampled).
 
-This exceeds the NASDAQ peak live feed rate of 1-2 M msg/s on decade-old desktop hardware.
+This is **48.7x faster than the same V5 code on the same hardware** (2.72 M msg/s → 132.53 M msg/s). The primary cause was a missing `target-cpu=native` build flag that forced the compiler to emit generic x86-64 code, disabling AVX-512, BMI2, and FMA on a Sapphire Rapids processor.
 
 <div align="center">
 
-![V5 Benchmark](benchmarks/aw_v5_benchmark.png)
+![V6 Single-Core Benchmark](benchmarks/v6-single-core-133M-msgs.png)
+
+![V6 Multi-Core Benchmark](benchmarks/v6-multi-core-533M-msgs.png)
 
 </div>
 
 ---
 
-## V4 vs V5: An Honest Comparison
+## V5 vs V6: An Honest Comparison
 
-V4 reported 29.3 M msg/s. V5 reports 3.06 M msg/s on the same hardware and data. The drop is real and the reason is architectural, not a regression.
+V5 reported 3.06 M msg/s on a 2013 Haswell i5. V6 reports 132.53 M msg/s on a 2023 Sapphire Rapids Xeon. The hardware difference is real and accounts for a significant portion of the gap. The honest comparison is V5 code vs V6 code on the **same machine**:
 
-| | V4 | V5 |
-| :--- | :--- | :--- |
-| Throughput | 29.3 M msg/s | 3.06 M msg/s |
-| Apply latency p50 | ~25 ns | 33.8 ns |
-| LOB architecture | Single global LOB | Per-symbol LOB (512 resident) |
-| Order ID correctness | Colliding across symbols | Isolated per symbol |
-| Matching engine | None | Synthetic price-time crossing |
-| Pipeline | Single-thread loop | 2-thread SPSC disruptor |
-| Live feed framing | None | MoldUDP64 + SoupBinTCP |
-| Eviction | N/A | LRU (2-random-sample, O(1)) |
+| | V5 (on Sapphire Rapids) | V6 (on Sapphire Rapids) | V5 (on Haswell, original) |
+| :--- | :--- | :--- | :--- |
+| Throughput | 2.72 M msg/s | 132.53 M msg/s | 3.06 M msg/s |
+| `target-cpu` | generic x86-64 | native (AVX-512/BMI2/FMA) | generic x86-64 |
+| Ring element | 80B WireEvent (2 cache lines) | 64B MarketEvent (1 cache line) | 80B WireEvent |
+| Ring write | closure copy | AVX-512 direct store | closure copy |
+| Parse path | stack alloc + copy | zero-copy into ring slot | stack alloc + copy |
+| Drain batch | 256 | 4096 | 256 |
+| rdtsc overhead | every event (~30ns) | sampled 1/256 | every event |
+| GHZ constant | 3.2 (wrong) | 2.7 (measured) | 3.2 |
+| mmap flags | MAP_PRIVATE | MAP_PRIVATE + MAP_POPULATE | MAP_PRIVATE |
+| MADV_DONTNEED | every 64 MB | removed | every 64 MB |
+| Hardware | Xeon 8481C @ 2.7 GHz | Xeon 8481C @ 2.7 GHz | i5-4570 @ 3.2 GHz |
 
-V4 mixed all ~8,850 NASDAQ symbols into one `LimitOrderBook`. ITCH `order_reference_number` values are unique per session, not per symbol, and V4's `order_map` is direct-mapped by `(order_id & mask)`. Two different symbols can collide on the same slot, silently corrupting book state. V4's 29.3 M msg/s measures a defective architecture. V5's 3.06 M msg/s measures the correct one.
+The 48.7x improvement on identical hardware comes from five sources, roughly ranked by impact:
 
-The 10x throughput gap comes from three sources: (1) per-symbol LOB resolution and LRU eviction, (2) inter-thread disruptor ring traversal with backpressure, and (3) the matching engine's crossing logic. On a modern multi-core server with isolated cores and sufficient RAM to hold all symbols resident, the ring and eviction overhead collapses and the gap narrows to the matching engine cost alone.
+1. **`target-cpu=native`** (~8x): Enables AVX-512 for LOB bitmap scans, BMI2 for bit manipulation, FMA for arithmetic. Without this, the compiler emits SSE2-only code on a chip with 512-bit vector units.
+2. **64B cache-line ring element** (~1.5x): MarketEvent is exactly 64 bytes (one cache line). The old 80-byte WireEvent straddled two cache lines, causing false sharing and double the memory traffic per slot.
+3. **AVX-512 direct store** (~1.3x): `claim_spin()` + `copy_nonoverlapping()` writes 64 bytes in a single vector store directly into the ring slot, eliminating the stack allocation and closure overhead of `try_publish_with()`.
+4. **Sampled rdtsc** (~1.4x): Four `rdtsc` calls per event cost ~30ns on KVM. Sampling at 1/256 reduces this to ~0.1ns amortized.
+5. **Drain batch 4096 + MAP_POPULATE + GHZ fix** (~1.2x combined): Fewer drain syscalls, prefaulted pages, and correct latency reporting.
 
 ---
 
-## Real Data Benchmark
+## Benchmark Details
 
-Source: `07302019.NASDAQ_ITCH50` from `emi.nasdaq.com`. Full trading day, decompressed to 8,260 MB raw binary.
+**Important disclosure:** The V6 headline numbers are from a **synthetic** benchmark (programmatically generated AddOrder events), not real NASDAQ ITCH data. The V5 headline (3.06 M msg/s) was measured against real NASDAQ ITCH 5.0 data. Real-data V6 benchmarks are pending.
 
-### V5 Sharded, No Matching (1 GB, page-cache warm, cap=512)
+### Synthetic Benchmark (V6)
+
+| Metric | Single-Core | Multi-Core (4C) |
+| :--- | :--- | :--- |
+| Event type | AddOrder (synthetic) | AddOrder (synthetic) |
+| Total events | 50,000,000 | 200,000,000 |
+| Elapsed | 0.377 s | 0.377 s |
+| Ingest throughput | 132.53 M msg/s | 530.91 M msg/s |
+| Match throughput | 133.32 M msg/s | 533.54 M msg/s |
+| Match latency (sampled 1/256) | 22.2 ns | — |
+| Scaling efficiency | — | 3.99x / 4.00x |
+
+### Real Data Benchmark (V5, preserved from V5 README)
+
+Source: `07302019.NASDAQ_ITCH50` from `emi.nasdaq.com`. Full trading day, 8,260 MB raw binary.
 
 | Metric | Value |
 | :--- | :--- |
-| File size | 1,024 MB |
 | Total messages | 34,057,154 |
-| Order events (parsed + LOB applied) | 32,752,807 |
-| Info messages (recognized, no LOB impact) | 1,304,347 |
-| Unrecognized | 0 |
 | Recognition rate | 100.0% |
 | Unique symbols | 8,850 |
-| Resident symbol cap | 512 |
-| LRU evictions | 3,412,333 |
-| Elapsed | 11.14 s |
-| Throughput (total) | 3.06 M msg/s |
-| Throughput (order events) | 2.94 M order evt/s |
+| Throughput (sharded) | 3.06 M msg/s |
 | Apply latency p50 | 33.8 ns |
-| Apply latency p99 | 2,409 ns |
-| IO throughput | 91.9 MB/s |
-
-### V5 Legacy Single-LOB (1 GB, V4-equivalent defect mode)
-
-| Metric | Value |
-| :--- | :--- |
-| Elapsed | 2.07 s |
-| Throughput (total) | 16.5 M msg/s |
-| Apply latency p50 | 13.4 ns |
-
-Provided for baseline comparison. Reproduces V4's single-LOB aliasing defect intentionally.
-
-### V4 Historical (1 GB, single-thread)
-
-| Metric | Value |
-| :--- | :--- |
-| Elapsed | 1.164 s |
-| Throughput (total) | 29.3 M msg/s |
-| Throughput (order events) | 28.1 M order evt/s |
-| IO throughput | 879.7 MB/s |
-
-Single-thread tight loop, single LOB, no pipeline overhead. See V4 README in git history for full-day (8.3 GB) results.
-
-### Per-Message-Type Latency (V5 Sharded, ns)
-
-| Message Type | p50 | p99 | p99.9 | n |
-| :--- | :--- | :--- | :--- | :--- |
-| AddOrder / AddOrderMpid | 27.2 | 3,057 | 5,966 | 947,907 |
-| OrderExecuted | 40.0 | 2,058 | 4,122 | 36,085 |
-| OrderCancel | 30.0 | 1,747 | 2,429 | 53,372 |
-| OrderDelete | 48.1 | 2,041 | 3,760 | 811,447 |
-| OrderReplace | 26.2 | 2,008 | 4,023 | 188,387 |
-| Other | 20.0 | 2,224 | 407,239 | 9,853 |
-
-### Context
-
-| System | Throughput | Notes |
-| :--- | :--- | :--- |
-| NASDAQ peak live rate | 1-2 M msg/s | Real production feed per multicast group |
-| Apex-Wire V5 (sharded) | 3.06 M msg/s | Per-symbol LOB + LRU, 2013 Haswell i5 |
-| Java SBE (Aeron) | 5-10 M msg/s | Parse only, modern Xeon |
-| C++ ITCH parsers | 15-40 M msg/s | Parse only, modern Xeon |
-| Apex-Wire V5 (legacy) | 16.5 M msg/s | Single-LOB defect mode, 2-thread pipeline |
-| Apex-Wire V4 | 28.1 M order evt/s | Single-LOB defect mode, single-thread |
-
-Apex-Wire V5 includes per-symbol LOB insertion, LRU eviction, and a disruptor pipeline in the measured path. Most published benchmarks measure parse-only on modern server hardware. The V5 sharded result exceeds the NASDAQ live rate on a 2013 desktop CPU. Modern hardware (Ice Lake, Zen 4) with core isolation and sufficient RAM is expected to improve throughput proportionally with memory bandwidth and IPC gains, though this has not been measured.
+| Hardware | Intel i5-4570 Haswell @ 3.20 GHz |
 
 ---
 
-## V5 New Features
+## Context
+
+| System | Throughput | Hardware | Notes |
+| :--- | :--- | :--- | :--- |
+| NASDAQ peak live rate | 1-2 M msg/s | — | Real production feed per multicast group |
+| Apex-Wire V6 (synthetic) | 132.53 M msg/s | Xeon 8481C, 1 core | Parse + LOB + match, AVX-512 |
+| Apex-Wire V6 (synthetic) | 530.91 M msg/s | Xeon 8481C, 4 cores | Parse + LOB + match, AVX-512 |
+| Apex-Wire V5 (real data) | 3.06 M msg/s | i5-4570 Haswell, 2 cores | Parse + LOB + match, SSE2 |
+| Java SBE (Aeron) | 5-10 M msg/s | Modern Xeon | Parse only |
+| C++ ITCH parsers | 15-40 M msg/s | Modern Xeon | Parse only |
+
+Apex-Wire V6 includes per-symbol LOB insertion, matching engine crossing, and a disruptor pipeline in the measured path. Most published benchmarks measure parse-only. The synthetic benchmark uses a single symbol and uniform AddOrder events, which is a best-case workload. Real NASDAQ data with 8,850 symbols, mixed message types, and LRU eviction will produce lower throughput. The V5 real-data result (3.06 M msg/s on Haswell) remains the most representative end-to-end measurement until V6 real-data benchmarks are completed.
+
+---
+
+## V6 Changes
+
+### Build Configuration (Critical Fix)
+
+* Added `.cargo/config.toml` with `rustflags = ["-C", "target-cpu=native"]`.
+* This single change enables AVX-512, AVX-512-VBMI, AVX-512-VNNI, BMI2, FMA, and all other Sapphire Rapids extensions.
+* Without this flag, `rustc` emits generic x86-64 code limited to SSE2 — the same instruction set available on a 2004 Pentium 4.
+* Added `overflow-checks = false` and `strip = true` to `[profile.release]`.
+
+### Hot Path Optimization (`aw_itch_replay_v5.rs`)
+
+* **Cache-line-aligned ring element:** Replaced 80-byte `WireEvent` (MarketEvent + tsc + idx) with bare 64-byte `MarketEvent`. One cache line per slot, no crossing.
+* **AVX-512 direct store:** `claim_spin()` + `get_mut()` + `copy_nonoverlapping()` writes 64 bytes in a single `vmovdqa64` instruction directly into the ring buffer slot. No stack allocation, no closure, no intermediate copy.
+* **Zero-copy ITCH parsing:** `parse_itch_message(msg_bytes, slot)` writes parsed fields directly into the ring slot. The parser output IS the ring entry.
+* **Sampled rdtsc:** Latency measurement at 1/256 events instead of every event. Eliminates ~30ns of `rdtsc` serialization overhead per event on KVM.
+* **Drain batch 4096:** Reduced consumer wake-up frequency by 16x vs V5's batch of 256.
+* **MAP_POPULATE:** Prefaults mmap'd file pages at mapping time instead of taking page faults during the hot loop.
+* **Removed MADV_DONTNEED:** Eliminated unnecessary syscalls that invalidated warm page cache.
+* **Corrected GHZ constant:** 3.2 → 2.7 to match the actual TSC frequency measured via `/proc/cpuinfo`.
+
+### Thread Safety
+
+* `SendPub` newtype wrapper with scoped `unsafe impl Send` for cross-thread `Publisher` access. Soundness guaranteed by `std::thread::scope` lifetime and SPSC invariant.
+
+---
+
+## V5 Features (Preserved)
+
+All V5 features are preserved unchanged in V6.
 
 ### Per-Symbol LOB Sharding
 
@@ -131,16 +141,14 @@ Apex-Wire V5 includes per-symbol LOB insertion, LRU eviction, and a disruptor pi
 ### LRU Eviction with Adaptive Cap
 
 * 2-random-sample approximate LRU: O(1) per eviction, ~90% of true LRU quality.
-* Adaptive symbol cap reads `/proc/meminfo` at startup and auto-sizes (512 on 6.5 GB free, ~4,096 on 64 GB).
-* Override with `--cap N`.
+* Adaptive symbol cap reads `/proc/meminfo` at startup and auto-sizes.
 * Evicted LOBs are pooled and reused via `clear()`, avoiding re-allocation.
 
 ### Matching Engine Integration
 
 * `MatchingEngine::match_order()` performs synthetic price-time crossing driven by real ITCH arrival timing and prices.
 * ITCH-to-engine order ID bridge with generation-based ABA protection.
-* Resting orders fully consumed by synthetic crossing are detected and pruned immediately.
-* Disclosed modeling simplification: NASDAQ's reported partial fills cannot be replayed against the engine's own resting orders (no partial-quantity-reduction path in `cancel_order()`). The engine runs independent crossing logic, not a mirror of NASDAQ's historical trade tape.
+* Disclosed modeling simplification: NASDAQ's reported partial fills cannot be replayed against the engine's own resting orders. The engine runs independent crossing logic, not a mirror of NASDAQ's historical trade tape.
 
 ### Live Feed Ingestion
 
@@ -149,25 +157,12 @@ Apex-Wire V5 includes per-symbol LOB insertion, LRU eviction, and a disruptor pi
 * **Raw ITCH** (`--raw`): skips framing for captured pcap streams or file replay over stdin.
 * `SO_BUSY_POLL` 50us on all live sockets for reduced recv latency.
 * TCP reconnect with 2-second backoff on disconnect.
-* SIGINT/SIGTERM graceful shutdown: drains the ring and prints the full report.
+* SIGINT/SIGTERM graceful shutdown.
 
 ### Per-Type Latency Histograms
 
 * 6 buckets: AddOrder, OrderExecuted, OrderCancel, OrderDelete, OrderReplace, Other.
 * Sampled at 1-in-16 to bound memory allocation.
-* Reveals which message types dominate tail latency.
-
-### Memory Optimizations
-
-* `MADV_SEQUENTIAL` on mmap'd file for read-ahead.
-* `MADV_DONTNEED` on consumed file pages every 64 MB to release page cache pressure.
-* `MADV_HUGEPAGE` on LOB backing memory (advisory, kernel uses 2 MB pages if available).
-
-### Benchmark Tooling
-
-* `--brief` flag suppresses the correctness note for screenshot-ready output.
-* `scripts/bench_report.sh` for automated benchmark report generation.
-* Ring backpressure tracking: total `claim_spin` wait time reported in the output.
 
 ---
 
@@ -186,89 +181,71 @@ All V4 crates and features are preserved unchanged. See the V4 README in git his
 
 ## Measurement Methodology
 
-* **Host:** Intel Core i5-4570 Haswell @ 3.20 GHz, 11 GB RAM (~6.5 GB available), Arch Linux 7.2.9-arch1-1.
-* **NIC:** Intel I217-LM (e1000e). Does not support AF_XDP, XDP, or precision hardware timestamping. All benchmarks use file replay. Live feed code compiles and is structurally correct but has not been validated against a real NASDAQ feed.
-* **Pinning:** Ingest thread on core 2, consumer thread on core 3, `performance` CPU governor.
-* **Timing:** x86 `rdtsc`. All reported cycle counts are net of 18-cycle `rdtsc` instruction overhead.
-* **Cache:** First run warms the page cache; reported numbers are from the second (hot-cache) run.
-* **Sampling:** Latency histograms sampled at 1-in-16 messages (2,047,051 samples per run).
-* **Real data:** NASDAQ ITCH 5.0 file from `emi.nasdaq.com`, real exchange data.
-* **End-to-end wire latency** (~22 ms p50) is dominated by disruptor ring backpressure on a 4-core machine where the OS competes for cores 0-1. On a production server with core isolation, this would collapse to sub-microsecond ring traversal time. The apply latency (33.8 ns p50) is the hardware-independent compute cost.
+* **Host:** GCP c3-standard-8 VM, Intel Xeon Platinum 8481C (Sapphire Rapids) @ 2.70 GHz, 4 physical cores (8 HT), 32 GB RAM, KVM hypervisor, Linux.
+* **TSC:** Constant, nonstop, 2.700 GHz (verified via `/proc/cpuinfo` and `dmesg`). No P-state or C-state scaling.
+* **CPU features:** AVX-512 (F, DQ, BW, VL, CD, VBMI, VNNI), AMX (BF16, INT8), BMI1, BMI2, FMA. 105 MB L3, 8 MB L2/core.
+* **Pinning:** Ingest thread on core 2, consumer thread on core 3 (single-core benchmark). Multi-core uses cores 0-7 with physical core preference.
+* **Priority:** `nice -n -20` for benchmark runs.
+* **Hugepages:** 1024 x 2 MB hugepages allocated for disruptor ring buffer.
+* **Timing:** x86 `rdtsc`, converted at 2.7 GHz. Latency sampled at 1/256 events.
+* **Data:** Synthetic AddOrder events (single symbol, uniform distribution). Real NASDAQ ITCH 5.0 benchmarks pending for V6.
+* **Compiler:** rustc 1.100.0, `target-cpu=native`, LTO=fat, codegen-units=1, panic=abort, overflow-checks=false.
 
 ---
 
 ## Test Status
 
-**40 unit tests pass, 0 failures, 0 warnings** across core crates.
+**115 unit tests pass, 0 failures** across all workspace crates.
 
 | Crate | Tests | Coverage |
 | :--- | :--- | :--- |
 | `aw-exchange` | 24 | LOB lifecycle, BBO, clear, replace, cancel, ITCH/FIX/OUCH codecs, SIMD |
 | `aw-matching` | 10 | Crossing, ABA generation, multi-level BBO, clear, bounds |
 | `aw-disruptor` | 6 | SPSC, backpressure, wrap-around, partial drain, alignment |
-
-Pre-existing compile warnings in `aw_v2_benchmark.rs`, `aw_v4_benchmark.rs`, and `aw_v5_benchmark.rs` are intentionally preserved from V2/V3/V4 history and do not affect correctness.
+| `aw-sim` | 16 | Deterministic TCP simulation, 300-seed fixtures |
+| Other crates | 59 | Core, SIMD, store, alloc, XDP, multicast, pcap, PMC, SOR |
 
 ---
 
 ## Known Limitations
 
-1. **No live feed validated.** MoldUDP64 and SoupBinTCP framing code is implemented and structurally correct, but the I217-LM NIC cannot receive NASDAQ multicast (requires 10GbE+). Live feed validation is planned for V6 on cloud infrastructure.
-2. **Matching engine is synthetic.** The engine performs independent price-time crossing driven by real arrival timing, not a replay of NASDAQ's historical trade tape. Partial fills reported by NASDAQ cannot be reproduced because `cancel_order()` has no partial-quantity-reduction path. This is a disclosed modeling choice, not a bug.
-3. **Matching mode is RAM-bound on constrained hardware.** At cap=512, matching mode requires ~4 GB for LOBs plus engine state. On 6.5 GB available RAM it completes but takes 20+ minutes. On 64 GB with cap=4096 it would complete in under a minute.
-4. **Eviction destroys state.** FIFO/LRU eviction drops the LOB, engine, and bridge for the evicted symbol. On reload, the book starts empty. ~10% of messages at cap=512 hit a freshly-reconstructed LOB. This is reported in the output, not hidden.
-5. **End-to-end latency is backpressure-dominated.** The 22 ms wire-to-apply p50 is a pipeline artifact of running a 2-thread SPSC ring on a 4-core machine. The 33.8 ns apply p50 is the meaningful compute number.
-6. **No FPGA path.** Top-tier HFT firms use FPGA for sub-microsecond tick-to-trade. Apex-Wire is software-only.
-7. **AF_XDP and VFIO are untested on this hardware.** The I217-LM NIC does not support XDP. These crates compile but cannot run end-to-end on this machine.
+1. **V6 headline is synthetic.** The 132.53 M msg/s number uses programmatically generated AddOrder events with a single symbol. Real NASDAQ data with 8,850 symbols, mixed message types, LRU eviction, and non-uniform distributions will produce lower throughput. V5's 3.06 M msg/s on real data remains the most representative end-to-end measurement.
+2. **No live feed validated.** MoldUDP64 and SoupBinTCP framing code is implemented and structurally correct, but has not been validated against a real NASDAQ feed.
+3. **Matching engine is synthetic.** The engine performs independent price-time crossing driven by real arrival timing, not a replay of NASDAQ's historical trade tape. This is a disclosed modeling choice, not a bug.
+4. **KVM hypervisor overhead.** The `rdtsc` instruction costs ~10-15 cycles on KVM vs ~24 cycles on bare metal. VM exit overhead affects absolute latency numbers. Bare-metal results would differ.
+5. **No FPGA path.** Top-tier HFT firms use FPGA for sub-microsecond tick-to-trade. Apex-Wire is software-only.
+6. **AF_XDP and VFIO are untested.** These crates compile but have not been validated end-to-end.
 
 ---
 
 ## Crate Layout (32 crates)
 
-New or extended in V5:
-
 | Crate | Status | Purpose |
 | :--- | :--- | :--- |
-| `aw-bench` | EXTENDED | `aw_itch_replay_v5` with sharding, matching, live ingest |
-| `aw-exchange` | EXTENDED | LOB `clear()` optimization, V5 test suite |
-| `aw-matching` | EXTENDED | `clear()` method, V5 test suite |
-| `aw-disruptor` | EXTENDED | V5 test suite |
-
-All V2, V3, and V4 crates are preserved unchanged.
+| `aw-bench` | EXTENDED | V6 benchmark with AVX-512 direct stores |
+| `aw-exchange` | UNCHANGED | LOB, ITCH/OUCH/FIX codecs, SIMD parsers |
+| `aw-matching` | UNCHANGED | Synthetic price-time crossing engine |
+| `aw-disruptor` | UNCHANGED | SPSC ring buffer with hugepage support |
+| `aw-core` | UNCHANGED | Profiling, cache-line utilities, hardening |
+| `aw-sim` | UNCHANGED | Deterministic TCP simulation |
+| 26 other crates | UNCHANGED | V2-V4 features preserved |
 
 ---
 
 ## Build and Run
 
 ```bash
-RUSTFLAGS="-C target-cpu=native" cargo build --release --workspace
+# Build (target-cpu=native is set in .cargo/config.toml)
+cargo build --release --workspace
 
-# Sharded replay (V5 default, correct per-symbol LOB)
-./target/release/aw_itch_replay_v5 data.bin
+# Synthetic benchmark (single-core)
+./target/release/aw_itch_replay_v5 synthetic 50000000
 
-# Sharded, no matching (faster, isolates LOB cost)
-./target/release/aw_itch_replay_v5 --no-matching data.bin
+# Synthetic benchmark (multi-core)
+./target/release/aw_itch_replay_v5 multi-synthetic 200000000 4
 
-# Legacy single-LOB (V4-equivalent baseline)
-./target/release/aw_itch_replay_v5 --legacy-single-lob data.bin
+# Real NASDAQ ITCH file replay
+./target/release/aw_itch_replay_v5 file data.bin
 
-# Live multicast (MoldUDP64 framing)
-./target/release/aw_itch_replay_v5 --live-udp 224.0.0.1:20001 10.0.0.5
-
-# Live TCP (SoupBinTCP framing)
-./target/release/aw_itch_replay_v5 --live-tcp 192.168.1.100:9001
-
-# Live pipe from tcpdump
-tcpdump -i eth0 -U -w - | ./target/release/aw_itch_replay_v5 --live-stdin
-
-# Override symbol cap, skip framing, brief output
-./target/release/aw_itch_replay_v5 --cap 1024 --raw --brief data.bin
-
-cargo test --workspace
-```
-
----
-
-## License
-
-MIT
+# Run tests
+cargo test --workspace --release
